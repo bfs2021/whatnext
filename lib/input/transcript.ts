@@ -158,7 +158,6 @@ function completeLines(buf: Buffer, base: number, skipFirst = false): {lines: st
 export class Transcripts {
   private files = new Map<string, FileState>();
   private paths = new Map<string, string>();
-  private firsts = new Map<string, {text?: string; size: number}>();
   private created = new Map<string, {at?: number; size: number}>();
 
   constructor(private readonly configDir: string) {}
@@ -231,41 +230,6 @@ export class Transcripts {
     }
   }
 
-  /** 最初の依頼(概要の行に出す)。先頭から最大 2MB を読む。一度見つけたら読み直さない。 */
-  async firstPrompt(sid: string, force = false): Promise<string | undefined> {
-    const known = this.firsts.get(sid);
-    if (known?.text !== undefined) return known.text;
-    try {
-      const path = await this.locate(sid);
-      if (!path) return undefined;
-      const s = await stat(path);
-      if (!force && known && known.size === s.size) return undefined;
-      const text = await readRange(path, 0, Math.min(s.size, HEAD));
-      const {lines} = completeLines(text, 0);
-      for (const line of lines) {
-        if (!line.includes('"user"')) continue;
-        let o: Record<string, unknown>;
-        try {
-          o = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (o.type !== 'user' || o.isSidechain === true || o.isMeta === true) continue;
-        const c = (o.message as {content?: unknown} | undefined)?.content;
-        if (typeof c !== 'string') continue;
-        const t = instructionText(c);
-        if (t !== undefined) {
-          this.firsts.set(sid, {text: t, size: s.size});
-          return t;
-        }
-      }
-      this.firsts.set(sid, {size: s.size});
-      return undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   /** セッションを作った時刻(先頭から、`timestamp` を持つ最初の行)。先頭から最大 2MB を読む。一度見つけたら読み直さず、見つからなければファイルが伸びるまで読み直さない。 */
   async createdAt(sid: string): Promise<number | undefined> {
     const known = this.created.get(sid);
@@ -300,7 +264,6 @@ export class Transcripts {
 
   /** 一覧に出なくなったセッションの記憶を捨てる。 */
   forget(keep: ReadonlySet<string>): void {
-    for (const m of [this.files, this.paths, this.firsts, this.created])
-      for (const k of m.keys()) if (!keep.has(k)) m.delete(k);
+    for (const m of [this.files, this.paths, this.created]) for (const k of m.keys()) if (!keep.has(k)) m.delete(k);
   }
 }

@@ -231,7 +231,6 @@ describe('会話記録 (シナリオ 33、34、45)', () => {
     expect(g?.declined).toBe('Bash: npm run build');
     expect(g?.permission).toBeUndefined();
     expect(g?.prompt?.text).toBe('run the build');
-    expect(await tr.firstPrompt('sid-1')).toBe('old prompt');
   });
 
   it('失敗の行と質問', async () => {
@@ -266,13 +265,12 @@ describe('会話記録 (シナリオ 33、34、45)', () => {
     const dir = await mkdtemp(join(tmpdir(), 'wn-tr-'));
     const tr = new Transcripts(dir);
     expect(await tr.read('nope')).toBeUndefined();
-    expect(await tr.firstPrompt('nope', true)).toBeUndefined();
     await mkdir(join(dir, 'projects', 'p'), {recursive: true});
     await writeFile(
       join(dir, 'projects', 'p', 'nope.jsonl'),
       `${JSON.stringify({type: 'user', timestamp: T(1), message: {content: 'late'}})}\n`,
     );
-    expect(await tr.firstPrompt('nope', true)).toBe('late');
+    expect((await tr.read('nope'))?.prompt?.text).toBe('late');
   });
 
   it('作った時刻は、時刻を持つ最初の行の時刻。なければ undefined で、あとから書かれれば読み直す', async () => {

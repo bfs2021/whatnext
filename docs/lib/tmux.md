@@ -6,7 +6,7 @@
 
 - サーバは `tmux -L <ソケット名>`。一覧のセッションは `LIST`（`list`）、作業台の案内のセッションは `GUIDE`（`wbguide`）。
 - claude の画面のセッションは `<id>`（中で `claude attach <id>`）、作業台は `sh-<id>`、信頼の確認は `trust-<乱数>`。
-- 一覧のプロセスの pid は `@wn_pid`、版は `@wn_version`、claude の画面のステータス行のキーの説明は `@wn_keys`、概要の行は `@wn_summary`（セッションのオプション）に置く。
+- 一覧のプロセスの pid は `@wn_pid`、版は `@wn_version`、claude の画面のステータス行のキーの説明は `@wn_keys`（セッションのオプション）に置く。
 - キーとフックは、頼みごとを `@wn_req_<秒>_<pid>` に書いてから一覧に SIGUSR2 を送る。頼みごとの形は `key <action> <セッション名> <client_tty>`、`focus <client_tty>`、`agentview <セッション名>`。作業台の最後のシェルが終わったときは `@wn_closed` に `<id>` を書く。
 - 案内のプログラムのペインには、印 `GUIDE_PANE`（`@wn_guide_pane`、ペインのオプション。値は `1`）を付ける。付けるのは使う側である。`pane-died` は、案内のセッションのうち印のあるペインだけを起動し直し、ペインのオプション `GUIDE_RESPAWNED`（`@wn_respawned`。`<回数> <最後に起動し直すと決めた UNIX 秒>`。起動し直す1秒前の時刻）で数える。使う側が案内のペインを起動し直すときは、`GUIDE_RESPAWNED` を消して数え直させる（消さないと、前の回数のまま数える）。案内のペインが終わったときの様子は、サーバ全体のオプション `@wn_guide_died` に置く（書式としては展開しない値なので、書式に出すときは `escapeFormat` を通す）。
 
@@ -30,7 +30,7 @@
 - 問い合わせ：`hasSession`、`sessions`、`clients`（`tty`、`session`、`termname`、`pid`）、`option`。
 - 設定：`setOption`、`unsetOption`、`sourceConfig(text)`（新しいサーバに初めて流し込むと、`table wnq doesn't exist` で 0 以外を返すが、キー、フック、オプションは入る。サイクル9で確かめた。#275）、`takeRequests()`（頼みごとを書かれた順に取り出して消す）。
 - クライアント：`switchClient(tty, target)`、`detachClient(tty)`、`display(tty, text, ms?)`（短い知らせ。`#` は書式にならないよう直す）。
-- セッション：`ensureClaudeSession(id, cwd, size)`（claude の画面。ステータス行2行。`claude attach` が 0 以外で終わったら、キーを待ってから一覧に戻す）、`setSummary(id, text)`、`createWorkbench(id, cwd, name)`（`sh-<id>`。prefix `ctrl+q`、マウス on、タイトル `whatnext workbench`、ステータス行1行）、`workbenchOptions(session, name)`（作業台と案内のセッションのオプション。ステータス行は、作業台ではウィンドウの一覧のあとに分割とウィンドウのキーを続け、案内のセッション（`GUIDE`）ではセッション名だけを出す）、`refreshWorkbenches(sessions)`（`sessions` は `sh-<id>` のセッション名。前の tmux サーバから引き継いだ作業台に、名前を除くオプションを入れ直す。名前は前のものを使う）、`setSessionName(session, name)`、`newTrustSession(dir)`、`killSession`、`killServer`、`signalGuide()`（案内のセッションのプログラムに読み直しを促す。送るシグナルは契約にないので、案内のプログラムは知らせだけに頼らず、自分でも読み直す。#275）。
+- セッション：`ensureClaudeSession(id, cwd, size)`（claude の画面。ステータス行1行。`claude attach` が 0 以外で終わったら、キーを待ってから一覧に戻す）、`createWorkbench(id, cwd, name)`（`sh-<id>`。prefix `ctrl+q`、マウス on、タイトル `whatnext workbench`、ステータス行1行）、`workbenchOptions(session, name)`（作業台と案内のセッションのオプション。ステータス行は、作業台ではウィンドウの一覧のあとに分割とウィンドウのキーを続け、案内のセッション（`GUIDE`）ではセッション名だけを出す）、`refreshWorkbenches(sessions)`（`sessions` は `sh-<id>` のセッション名。前の tmux サーバから引き継いだ作業台に、名前を除くオプションを入れ直す。名前は前のものを使う）、`setSessionName(session, name)`、`newTrustSession(dir)`、`killSession`、`killServer`、`signalGuide()`（案内のセッションのプログラムに読み直しを促す。送るシグナルは契約にないので、案内のプログラムは知らせだけに頼らず、自分でも読み直す。#275）。
 - `workbenchStatusFormat(session)`：作業台の画面のステータス行の tmux の書式（`status-format[0]` にそのまま入れる文字列）。strftime を通るので、`%` は `%%` で入っている。`workbenchOptions` が使う。
 - `running()`：作業台ごとに、シェル以外で動いているもののコマンド行（パイプは ` | ` でつなぐ）。戻りは `Map<string, string[]>` で、キーは作業台のセッションの `<id>`（`sh-` を付けない）である（サイクル9で使って確かめた。#275）。`parsePs(text)` と `foregroundCommand(procs, shellPid)` はその判定。作業台のペインの直接の子だけを見る。
 

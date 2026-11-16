@@ -274,7 +274,7 @@ describe('attach', () => {
     expect(h.calls().some(c => c.args[0] === 'attach')).toBe(false);
   });
 
-  it('49: claude の画面の下に、名前と最初の依頼、キーの説明が出る', async () => {
+  it('49: claude の画面の下には、キーの説明の1行だけが出る(名前と最初の依頼は出ない)', async () => {
     h = new Harness();
     h.agents([bg('a', {name: 'alpha'})]);
     h.transcript(sid('a'), [
@@ -286,8 +286,11 @@ describe('attach', () => {
     ]);
     await h.start();
     await h.keys('Enter');
-    const s = await h.waitFor(/alpha · ログインの不具合を直して/);
-    expect(s).toMatch(/\^Q\^L back/);
+    const s = await h.waitFor(/\^Q\^L back/);
+    const ls = s.split('\n');
+    // キーの説明は最下行に出る
+    expect(ls.filter(l => l.trim() !== '').at(-1)).toMatch(/\^Q\^L back/);
+    expect(s).not.toMatch(/ログインの不具合を直して/);
   });
 });
 

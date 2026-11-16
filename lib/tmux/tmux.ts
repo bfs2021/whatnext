@@ -343,25 +343,20 @@ export class Tmux {
     const wbstate = `#(sh -c "$(tmux -L ${S} show -gv @wn_wbstate_sh)" wn #{session_name})`;
     await this.t([
       ...['set', '-t', t, '@wn_claude', '1', ';'],
-      ...['set', '-t', t, 'status', '2', ';'],
+      ...['set', '-t', t, 'status', 'on', ';'],
       ...['set', '-t', t, 'status-interval', '3', ';'],
       ...['set', '-t', t, 'status-style', 'default', ';'],
       ...['set', '-t', t, 'status-left', wbstate, ';'],
       ...['set', '-t', t, 'status-left-length', '400', ';'],
-      ...['set', '-t', t, 'status-format[0]', '#[align=left]#{=/#{e|-:#{client_width},1}/…:@wn_summary}', ';'],
       ...[
         'set',
         '-t',
         t,
-        'status-format[1]',
+        'status-format[0]',
         '#[align=left]#{T;=/#{e|/:#{client_width},3}/…:status-left}#[align=right]#[fg=colour8]#{=/#{e|-:#{e|-:#{client_width},#{e|/:#{client_width},3}},2}/…:@wn_keys}',
       ],
     ]);
     return true;
-  }
-
-  async setSummary(id: string, text: string): Promise<void> {
-    await this.t(['set', '-t', `=${id}:`, '@wn_summary', escapeFormat(text)]);
   }
 
   /** 作業台 `sh-<id>` を作る。 */

@@ -93,14 +93,12 @@ const newId = (before: Set<string>) => mine().find(a => a.id && !before.has(a.id
 const nm = (id: string) => mine().find(a => a.id === id)?.name ?? id;
 
 describe('whatnext が起動したセッション', () => {
-  it('23・45・16・概要の行: 権限待ちの対象、断った道具、最後の応答の冒頭、CTX が出る。最初の依頼はすぐ概要の行に出る', async () => {
+  it('23・45・16: 権限待ちの対象、断った道具、最後の応答の冒頭、CTX が出る', async () => {
     h = new RealHarness();
     await h.start({size: {cols: 150, rows: 45}});
     const before = new Set(mine().map(a => a.id as string));
     await launchInWork();
     await sendPrompt(PERMISSION_PROMPT('n1'));
-    // 概要の行(フックを受けて、更新を待たずに出る)
-    await h.waitFor(/[0-9a-f]{8} · Use the Bash tool to run exactly/, 20000);
     await waitAgent(a => a.some(x => x.id && !before.has(x.id) && x.waitingFor === 'permission prompt'));
     const id = newId(before);
     // 権限待ちなら応答(道具の呼び出し)がある。n はモデルを選ばないので、ここで haiku を確かめる

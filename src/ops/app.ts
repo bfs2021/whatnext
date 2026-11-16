@@ -115,7 +115,6 @@ export class App {
 
   async start(): Promise<void> {
     this.persisted = this.p.stateFile.load();
-    this.p.hooks.onEvent((sid, event) => this.onHook(sid, event));
     await this.cleanupLeftovers();
     await this.refresh({initial: true});
     this.initialized = true;
@@ -317,7 +316,6 @@ export class App {
       }
     }
     this.save(linked);
-    void this.updateSummaries();
     this.p.prs.refresh(
       obs.rows
         .filter(r => r.tier !== null)
@@ -359,47 +357,6 @@ export class App {
       this.persisted.waits = validWaits(this.persisted.waits, all, new Set(this.spawner.keys()));
     }
     this.p.stateFile.save(this.persisted, annotated);
-  }
-
-  private async updateSummaries(): Promise<void> {
-    const sessions = new Set(await this.p.tmux.sessions());
-    for (const r of this.rows.values()) {
-      if (!r.id || !sessions.has(r.id)) continue;
-      await this.setSummary(r);
-    }
-  }
-
-  private async setSummary(r: ObsRow, force = false): Promise<void> {
-    if (!r.id) return;
-    const first = await this.p.transcripts.firstPrompt(r.sid, force).catch(() => undefined);
-    if (first) this.firstKnown.add(r.sid);
-    // 前に置いたものと同じなら tmux を呼ばない
-    const text = first ? `${r.name} · ${first}` : r.name;
-    if (this.summaries.get(r.id) === text) return;
-    this.summaries.set(r.id, text);
-    await this.p.tmux.setSummary(r.id, text);
-  }
-
-  private onHook(sid: string, event: string): void {
-    // 最初の依頼がもう分かっていれば何もしない(概要の行は変わらない)
-    if (event !== 'UserPromptSubmit' || this.firstKnown.has(sid)) return;
-    // 最初の依頼を送ったら、更新を待たずに概要の行に出す(会話記録の行は少し遅れて書かれる)
-    const id = sid.slice(0, 8);
-    void (async () => {
-      const sessions = await this.p.tmux.sessions();
-      if (!sessions.includes(id)) return;
-      const name = this.rows.get(sid)?.name ?? id;
-      for (let i = 0; i < 10; i++) {
-        const first = await this.p.transcripts.firstPrompt(sid, true).catch(() => undefined);
-        if (first) {
-          this.firstKnown.add(sid);
-          this.summaries.set(id, `${name} · ${first}`);
-          await this.p.tmux.setSummary(id, `${name} · ${first}`);
-          return;
-        }
-        await sleep(1000);
-      }
-    })();
   }
 
   private fetchUsage(force = false): void {
@@ -1050,15 +1007,8 @@ export class App {
   private async attach(id: string, cwd: string, sid: string | undefined): Promise<void> {
     const {cols, rows} = this.p.size();
     await this.p.tmux.ensureClaudeSession(id, cwd, {cols, rows});
-    // 作り直した claude の画面のセッションには概要がないので、覚えた値を捨てて置き直す
-    this.summaries.delete(id);
     const row = sid ? this.rows.get(sid) : [...this.rows.values()].find(r => r.id === id);
-    if (row) {
-      this.stampAttached(row.sid);
-      await this.setSummary(row);
-    } else {
-      await this.p.tmux.setSummary(id, id);
-    }
+    if (row) this.stampAttached(row.sid);
     if (!this.mainTty) this.mainTty = await this.p.tmux.option(MAIN_TTY);
     if (!this.mainTty) return;
     this.mainSession = id;
@@ -1090,8 +1040,6 @@ export class App {
     void this.refresh();
   }
   private pendingCursorId?: string;
-  private firstKnown = new Set<string>();
-  private summaries = new Map<string, string>();
 
   // ---- tmux からの知らせ ----
 
