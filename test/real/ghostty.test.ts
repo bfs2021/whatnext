@@ -190,7 +190,7 @@ describe('Ghostty(58a)', () => {
     expect(firstTabTerms()).toBe(2);
     // 元のタブに戻って w を押しても、分割もタブも増えず、作業台の画面のタブへ移る
     focusLeft(left);
-    await sleep(500);
+    await until(() => focusedName() !== 'whatnext workbench', 5000, 'back to the first tab');
     listKey('w');
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus by w to the tab');
     expect(tabCount()).toBe(2);

@@ -34,7 +34,9 @@ const TAB = `on run argv
     set initial input of cfg to (item 1 of argv)
     set environment variables of cfg to rest of argv
     set nt to new tab in front window with configuration cfg
-    focus (focused terminal of nt)
+    try
+      focus (focused terminal of nt)
+    end try
   end tell
   return "tab"
 end run`;

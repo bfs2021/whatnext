@@ -781,8 +781,8 @@ export class App {
     if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 't' || str === 'v')) return;
     if (str === 'e') this.openNote(sid);
     else if (str === 'f') this.openWait(sid);
-    else if (str === 'w') void this.createWorkbench(sid, {from: 'list'}, 'split');
-    else if (str === 't') void this.createWorkbench(sid, {from: 'list'}, 'tab');
+    else if (str === 'w') void this.createWorkbench(sid, {from: 'list', place: 'split'});
+    else if (str === 't') void this.createWorkbench(sid, {from: 'list', place: 'tab'});
     else if (str === 'v') void this.openVsCode(sid, {from: 'list'});
   }
 
@@ -1129,7 +1129,7 @@ export class App {
     const termname = (await this.p.tmux.clients()).find(c => c.tty === tty)?.termname ?? '';
     const sid = this.sidOfSession(session);
     if (action === GUIDE_CREATE) {
-      if (sid) void this.createWorkbench(sid, {from: 'guide'}, 'split');
+      if (sid) void this.createWorkbench(sid, {from: 'guide'});
       return;
     }
     if (!isAttachAction(action)) return;
@@ -1152,7 +1152,12 @@ export class App {
     }
     if (action === 'workbench' || action === 'workbenchTab') {
       if (sid)
-        void this.createWorkbench(sid, {from: 'attach', tty, termname}, action === 'workbench' ? 'split' : 'tab');
+        void this.createWorkbench(sid, {
+          from: 'attach',
+          tty,
+          termname,
+          place: action === 'workbench' ? 'split' : 'tab',
+        });
       return;
     }
     // 一覧に戻ってから処理する
@@ -1361,9 +1366,11 @@ export class App {
 
   private async createWorkbench(
     sid: string,
-    via: {from: 'list'} | {from: 'guide'} | {from: 'attach'; tty: string; termname: string},
-    /** Ghostty で作業台の画面が開いていないときに、どこに開くか(案内の `Enter` は開かない)。 */
-    place: 'split' | 'tab',
+    /** `place` は、Ghostty で作業台の画面が開いていないときに開く場所(案内の `Enter` は開かないので持たない)。 */
+    via:
+      | {from: 'list'; place: 'split' | 'tab'}
+      | {from: 'guide'}
+      | {from: 'attach'; tty: string; termname: string; place: 'split' | 'tab'},
   ): Promise<void> {
     const row = this.rows.get(sid);
     if (!row) return;
@@ -1390,7 +1397,7 @@ export class App {
     if (via.from !== 'guide' && termname.includes('ghostty')) {
       const res = wbOpen
         ? await focusWorkbench(this.p.run)
-        : await (place === 'tab' ? tabWorkbench : splitWorkbench)(this.p.run, this.p.workbenchCommand, {
+        : await (via.place === 'tab' ? tabWorkbench : splitWorkbench)(this.p.run, this.p.workbenchCommand, {
             WHATNEXT_TMUX_SOCKET: this.p.socket,
             WHATNEXT_PORT: String(this.p.port),
             // 失敗したときにキーを待たせる(`exec` で動くので、終わると分割やタブごと閉じる)
