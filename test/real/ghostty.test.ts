@@ -195,6 +195,19 @@ describe('Ghostty(58a)', () => {
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus by w to the tab');
     expect(tabCount()).toBe(2);
     expect(firstTabTerms()).toBe(2);
+    // タブの作業台の画面で ctrl+q ctrl+e を押すと、whatnext の画面のタブへ移り、メモの入力欄が見える
+    osa(
+      `tell application "Ghostty"
+        activate
+        set t to focused terminal of selected tab of (first window whose id is "${win}")
+        send key "q" modifiers "control" to t
+        send key "e" modifiers "control" to t
+      end tell`,
+    );
+    await until(() => focusedName() !== 'whatnext workbench', 8000, 'focus back to whatnext');
+    await until(() => /Note for wn-real-gh/.test(listScreen()), 5000, 'note input');
+    listKey('Escape');
+    await sleep(800);
     // whatnext を終了すると、whatnext が作ったタブは閉じる
     listKey('q');
     await until(() => tabCount() === 1, 15000, 'tab closed');

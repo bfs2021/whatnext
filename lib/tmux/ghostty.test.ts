@@ -1,6 +1,23 @@
 import {describe, expect, it} from 'vitest';
 import type {Run} from '../input/exec.js';
-import {splitWorkbench, tabWorkbench} from './ghostty.js';
+import {focusHiddenTerminal, splitWorkbench, tabWorkbench} from './ghostty.js';
+
+describe('見えていない端末へ移る', () => {
+  it('tty を引数で渡し、選ばれたタブにある端末は除いて探す。移ったときだけ focused を返す', async () => {
+    let args: string[] = [];
+    let out = 'focused\n';
+    const fake: Run = async (_cmd, a) => {
+      args = a;
+      return {code: 0, stdout: out, stderr: ''};
+    };
+    expect(await focusHiddenTerminal(fake, '/dev/ttys012')).toBe('focused');
+    expect(args[2]).toBe('/dev/ttys012');
+    expect(args[1]).toMatch(/terminals of selected tab of front window[\s\S]*return "none"[\s\S]*focus t/);
+    out = 'none\n';
+    expect(await focusHiddenTerminal(fake, '/dev/ttys012')).toBe('none');
+    expect(await focusHiddenTerminal(async () => ({code: 1, stdout: '', stderr: 'x'}), '/dev/ttys012')).toBe('failed');
+  });
+});
 
 describe('Ghostty の分割とタブに打ち込む文字列', () => {
   it.each([

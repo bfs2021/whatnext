@@ -7,7 +7,7 @@ import type {Supplied} from '../../lib/input/hooks.js';
 import {firstLine, leadLine} from '../../lib/input/text.js';
 import {color} from '../../lib/text/text.js';
 import {statusLabel, type Tier} from '../../lib/tier/classify.js';
-import {focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
+import {focusHiddenTerminal, focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
 import type {Observation, ObsRow} from '../input/observe.js';
 import {locate} from '../input/where.js';
@@ -1166,6 +1166,11 @@ export class App {
     if (!main) {
       await this.p.tmux.display(tty, 'The list is not open. Run "whatnext" to open it.', 3000);
       return;
+    }
+    // 作業台の画面で押したとき、whatnext の画面が別のタブに隠れていれば、そこへ移る(入力欄や確認が見えないまま、
+    // 続きの文字が作業台のシェルに入るのを避ける)。隣の分割で見えているときは移さない
+    if (tty !== main.tty && termname.includes('ghostty')) {
+      void focusHiddenTerminal(this.p.run, main.tty).then(res => this.p.log(`ghostty main ${res}`));
     }
     if (main.session !== LIST) {
       const from = main.session;
