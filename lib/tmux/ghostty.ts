@@ -44,9 +44,6 @@ end run`;
 const FOCUS_TTY = `on run argv
   tell application "Ghostty"
     set target to (item 1 of argv)
-    repeat with t in terminals of selected tab of front window
-      if tty of t is target then return "none"
-    end repeat
     repeat with t in terminals
       if tty of t is target then
         focus t
@@ -66,11 +63,8 @@ export async function focusWorkbench(run: Run): Promise<GhosttyResult> {
   return r.stdout.trim() === 'focused' ? 'focused' : 'none';
 }
 
-/**
- * tty が `tty` の端末へフォーカスを移す。ただし、その端末が前面のウィンドウの選ばれたタブにあるとき
- * (隣の分割で見えているとき)は移さない。
- */
-export async function focusHiddenTerminal(run: Run, tty: string): Promise<GhosttyResult> {
+/** tty が `tty` の端末へフォーカスを移す(別のタブにあれば、そのタブに切り替わる)。 */
+export async function focusTerminal(run: Run, tty: string): Promise<GhosttyResult> {
   const r = await run('osascript', ['-e', FOCUS_TTY, tty], {timeout: 10000});
   if (r.code !== 0) return 'failed';
   return r.stdout.trim() === 'focused' ? 'focused' : 'none';

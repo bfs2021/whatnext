@@ -43,7 +43,7 @@
 - `focusWorkbench(run)`：名前が `whatnext workbench` の Ghostty の端末へフォーカスを移す。別のタブにあれば、そのタブに切り替わる。
 - `splitWorkbench(run, command, env)`：前面の Ghostty の、フォーカスのある分割を右に分割し、` exec <command>` と改行を打ち込む（先頭の空白でシェルの履歴に残さない。`exec` はこの関数が付けるので、`command` に `exec` を付けない）（[ADR-0015](../adr/0015-ghostty-split-for-workbench-on-ctrl-q-ctrl-w.md)）。
 - `tabWorkbench(run, command, env)`：前面の Ghostty のウィンドウに新しいタブを開き、`splitWorkbench` と同じ文字列を打ち込む（`exec` の扱いも同じ）。
-- `focusHiddenTerminal(run, tty)`：`tty` が一致する Ghostty の端末へフォーカスを移す。その端末が前面のウィンドウの選ばれたタブにあるときは移さず、`none` を返す。
+- `focusTerminal(run, tty)`：`tty` が一致する Ghostty の端末へフォーカスを移す。別のタブにあれば、そのタブに切り替わる。見つからなければ `none` を返す。
 - 結果は `focused`、`split`、`tab`、`none`（作業台の画面がない）、`notfront`（Ghostty が前面にない）、`failed`。Ghostty の端末で押したときだけ呼ぶかは、使う側が `client_termname` で決める。
 
 ## テスト
