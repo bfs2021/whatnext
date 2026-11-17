@@ -342,9 +342,9 @@ describe('作業台の画面', () => {
     expect(out).not.toContain('\x1b[1A');
   });
 
-  it('Ghostty の分割から起動して失敗したときは、キーを待ってから終わる', async () => {
+  it('Ghostty のタブから起動して失敗したときは、キーを待ってから終わる', async () => {
     h = new Harness();
-    h.open('wb', `${h.envLine({WHATNEXT_WORKBENCH_SPLIT: '1'})} node '${CLI}' workbench`, {cols: 80, rows: 10});
+    h.open('wb', `${h.envLine({WHATNEXT_WORKBENCH_TAB: '1'})} node '${CLI}' workbench`, {cols: 80, rows: 10});
     await h.waitFor(/whatnext is not running\. Start whatnext first\.\nPress any key to close\./, 5000, 'wb');
     expect(h.screen('wb')).not.toMatch(/\[exit/);
     await h.keysTo('wb', 'x');

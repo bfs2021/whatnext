@@ -7,7 +7,7 @@ import type {Supplied} from '../../lib/input/hooks.js';
 import {firstLine, leadLine} from '../../lib/input/text.js';
 import {color} from '../../lib/text/text.js';
 import {statusLabel, type Tier} from '../../lib/tier/classify.js';
-import {focusWorkbench, splitWorkbench} from '../../lib/tmux/ghostty.js';
+import {focusWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
 import type {Observation, ObsRow} from '../input/observe.js';
 import {locate} from '../input/where.js';
@@ -1386,14 +1386,14 @@ export class App {
     if (via.from !== 'guide' && termname.includes('ghostty')) {
       const res = wbOpen
         ? await focusWorkbench(this.p.run)
-        : await splitWorkbench(this.p.run, this.p.workbenchCommand, {
+        : await tabWorkbench(this.p.run, this.p.workbenchCommand, {
             WHATNEXT_TMUX_SOCKET: this.p.socket,
             WHATNEXT_PORT: String(this.p.port),
-            // 失敗したときにキーを待たせる(`exec` で動くので、終わると分割ごと閉じる)
-            WHATNEXT_WORKBENCH_SPLIT: '1',
+            // 失敗したときにキーを待たせる(`exec` で動くので、終わるとタブごと閉じる)
+            WHATNEXT_WORKBENCH_TAB: '1',
           });
       this.p.log(`ghostty ${res}`);
-      if (res === 'focused' || res === 'split') {
+      if (res === 'focused' || res === 'tab') {
         this.follow();
         return;
       }

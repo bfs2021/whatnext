@@ -51,3 +51,4 @@ tmux kill-session -t wn                  # 片付け
 - そのため、`ctrl+q` の組み合わせ(tmux のキー表を通す必要がある)だけを Ghostty の `send key` で送り、一覧への文字キーと矢印は `tmux -L <ソケット> send-keys -t '=list:' w` で一覧のペインに直接送る。
 - AppleScript の変数名に `left` などを使うと、分割の向きの予約語とぶつかり `Access not allowed` で失敗する。
 - 分割の数と名前は `terminals of selected tab of <window>` の `name` で読む。作業台の画面のタイトルは `whatnext workbench`。
+- タブの数は `count of tabs of <window>`、選ばれたタブは `index of selected tab of <window>` で読む。`focus <端末>` は、その端末のあるタブに切り替える。`new tab in <window> with configuration cfg` で足したタブは選ばれた状態になり、中のコマンドが `exec` で終わるとタブごと閉じる(Ghostty 1.4.0)。
