@@ -3,7 +3,7 @@ import type {AttachKeyBinding} from '../../lib/tmux/tmux.js';
 // attach している間のキーの表(DESIGN.md「一覧と作業台の仕組み」)。tmux の割り当て、
 // 一覧に戻ってから処理する頼みごとの列挙、claude の画面のキーの説明を、この1か所から作る。
 
-export type AttachAction = 'back' | 'workbench' | 'vscode' | 'note' | 'stop' | 'new' | 'wait';
+export type AttachAction = 'back' | 'workbench' | 'workbenchTab' | 'vscode' | 'note' | 'stop' | 'new' | 'wait';
 
 interface AttachKey extends AttachKeyBinding {
   action: AttachAction;
@@ -15,6 +15,7 @@ interface AttachKey extends AttachKeyBinding {
 export const ATTACH_KEYS: readonly AttachKey[] = [
   {letter: 'l', action: 'back', bare: false, help: 'back', toList: true},
   {letter: 'w', action: 'workbench', bare: false, help: 'workbench', toList: false},
+  {letter: 't', action: 'workbenchTab', bare: false, help: 'tab', toList: false},
   {letter: 'v', action: 'vscode', bare: true, help: 'VS Code', toList: false},
   {letter: 'e', action: 'note', bare: true, help: 'note', toList: true},
   {letter: 'x', action: 'stop', bare: false, help: 'stop', toList: true},
@@ -30,4 +31,4 @@ export const isAttachAction = (s: string): s is AttachAction => ATTACH_KEYS.some
 export const GUIDE_CREATE = 'wbcreate';
 
 export const LIST_KEYS_HELP =
-  '↑↓ select · Enter attach · n new · ^X stop/delete · e note · f wait for · w workbench · v VS Code · r refresh · q quit';
+  '↑↓ select · Enter attach · n new · ^X stop/delete · e note · f wait for · w/t workbench · v VS Code · r refresh · q quit';

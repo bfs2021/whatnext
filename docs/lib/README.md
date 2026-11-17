@@ -10,7 +10,7 @@
 | 部品 | 契約 | 中身 |
 |---|---|---|
 | 入力 | [input.md](input.md) | 外部コマンドの口、`claude agents --json`、Usage、フックと OTel の受け口、会話記録、補う値、プロセス表 |
-| tmux | [tmux.md](tmux.md) | 専用の tmux サーバの設定と操作、claude の画面と作業台のセッション、Ghostty のタブ |
+| tmux | [tmux.md](tmux.md) | 専用の tmux サーバの設定と操作、claude の画面と作業台のセッション、Ghostty の分割とタブ |
 | 段の判定 | [tier.md](tier.md) | `--json` の行から段を決める、重複を除く |
 | 文字の幅と色 | [text.md](text.md) | 表示幅、切り詰め、揃え、色 |
 

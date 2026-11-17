@@ -60,11 +60,11 @@ async function waitForGuide(tmux: Tmux, env: Env): Promise<boolean> {
 }
 
 /**
- * 失敗して終わる。Ghostty のタブから `exec` で起動したとき(`WHATNEXT_WORKBENCH_TAB=1`)は、
- * 終わるとタブごと閉じてエラーが読めないので、キーを待ってから終わる。
+ * 失敗して終わる。Ghostty の分割かタブから `exec` で起動したとき(`WHATNEXT_WORKBENCH_SPLIT=1`)は、
+ * 終わると分割やタブごと閉じてエラーが読めないので、キーを待ってから終わる。
  */
 async function exitWithError(): Promise<number> {
-  if (process.env.WHATNEXT_WORKBENCH_TAB !== '1' || !process.stdin.isTTY) return 1;
+  if (process.env.WHATNEXT_WORKBENCH_SPLIT !== '1' || !process.stdin.isTTY) return 1;
   process.stderr.write('Press any key to close.');
   process.stdin.setRawMode(true);
   await new Promise(resolve => process.stdin.once('data', resolve));

@@ -7,7 +7,7 @@ import type {Supplied} from '../../lib/input/hooks.js';
 import {firstLine, leadLine} from '../../lib/input/text.js';
 import {color} from '../../lib/text/text.js';
 import {statusLabel, type Tier} from '../../lib/tier/classify.js';
-import {focusWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
+import {focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
 import type {Observation, ObsRow} from '../input/observe.js';
 import {locate} from '../input/where.js';
@@ -778,10 +778,11 @@ export class App {
       if (!busy) void this.enter(row);
       return;
     }
-    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 'v')) return;
+    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 't' || str === 'v')) return;
     if (str === 'e') this.openNote(sid);
     else if (str === 'f') this.openWait(sid);
-    else if (str === 'w') void this.createWorkbench(sid, {from: 'list'});
+    else if (str === 'w') void this.createWorkbench(sid, {from: 'list'}, 'split');
+    else if (str === 't') void this.createWorkbench(sid, {from: 'list'}, 'tab');
     else if (str === 'v') void this.openVsCode(sid, {from: 'list'});
   }
 
@@ -1128,7 +1129,7 @@ export class App {
     const termname = (await this.p.tmux.clients()).find(c => c.tty === tty)?.termname ?? '';
     const sid = this.sidOfSession(session);
     if (action === GUIDE_CREATE) {
-      if (sid) void this.createWorkbench(sid, {from: 'guide'});
+      if (sid) void this.createWorkbench(sid, {from: 'guide'}, 'split');
       return;
     }
     if (!isAttachAction(action)) return;
@@ -1149,8 +1150,9 @@ export class App {
       if (sid) void this.openVsCode(sid, {from: 'attach', tty});
       return;
     }
-    if (action === 'workbench') {
-      if (sid) void this.createWorkbench(sid, {from: 'attach', tty, termname});
+    if (action === 'workbench' || action === 'workbenchTab') {
+      if (sid)
+        void this.createWorkbench(sid, {from: 'attach', tty, termname}, action === 'workbench' ? 'split' : 'tab');
       return;
     }
     // 一覧に戻ってから処理する
@@ -1360,6 +1362,8 @@ export class App {
   private async createWorkbench(
     sid: string,
     via: {from: 'list'} | {from: 'guide'} | {from: 'attach'; tty: string; termname: string},
+    /** Ghostty で作業台の画面が開いていないときに、どこに開くか(案内の `Enter` は開かない)。 */
+    place: 'split' | 'tab',
   ): Promise<void> {
     const row = this.rows.get(sid);
     if (!row) return;
@@ -1386,14 +1390,14 @@ export class App {
     if (via.from !== 'guide' && termname.includes('ghostty')) {
       const res = wbOpen
         ? await focusWorkbench(this.p.run)
-        : await tabWorkbench(this.p.run, this.p.workbenchCommand, {
+        : await (place === 'tab' ? tabWorkbench : splitWorkbench)(this.p.run, this.p.workbenchCommand, {
             WHATNEXT_TMUX_SOCKET: this.p.socket,
             WHATNEXT_PORT: String(this.p.port),
-            // 失敗したときにキーを待たせる(`exec` で動くので、終わるとタブごと閉じる)
-            WHATNEXT_WORKBENCH_TAB: '1',
+            // 失敗したときにキーを待たせる(`exec` で動くので、終わると分割やタブごと閉じる)
+            WHATNEXT_WORKBENCH_SPLIT: '1',
           });
       this.p.log(`ghostty ${res}`);
-      if (res === 'focused' || res === 'tab') {
+      if (res === 'focused' || res === 'split' || res === 'tab') {
         this.follow();
         return;
       }

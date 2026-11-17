@@ -159,6 +159,24 @@ describe('作業台の画面', () => {
     expect(h.screen()).not.toMatch(/⚙/);
   });
 
+  it('Ghostty でない端末では、一覧の t と ctrl+q ctrl+t は w と同じに働く(作って知らせる、2回目は already exists)', async () => {
+    h = new Harness();
+    h.agents([bg('a', {name: 'alpha'}), bg('b', {name: 'beta'})]);
+    await h.start();
+    await h.select('alpha');
+    await h.keys('t');
+    await h.waitFor(/Workbench created\. Run "whatnext workbench" in a split to see it\./);
+    expect(h.sessions()).toContain('sh-a0000000');
+    await h.keys('t');
+    await h.waitFor(/Workbench already exists for alpha\./);
+    await h.select('beta');
+    await h.keys('Enter');
+    await h.waitFor(/fake claude attached/);
+    await h.keys('C-q', 'C-t');
+    await h.waitFor(/Workbench created\. Run "whatnext workbench" in a split to see it\./);
+    expect(h.sessions()).toContain('sh-b0000000');
+  });
+
   it('58・60: ctrl+q ctrl+w で作り、2回目は already exists。作業台の画面の ctrl+q ctrl+l、ctrl+q ctrl+v、ctrl+q c', async () => {
     h = new Harness();
     const app = h.repo('app');
@@ -342,9 +360,9 @@ describe('作業台の画面', () => {
     expect(out).not.toContain('\x1b[1A');
   });
 
-  it('Ghostty のタブから起動して失敗したときは、キーを待ってから終わる', async () => {
+  it('Ghostty の分割から起動して失敗したときは、キーを待ってから終わる', async () => {
     h = new Harness();
-    h.open('wb', `${h.envLine({WHATNEXT_WORKBENCH_TAB: '1'})} node '${CLI}' workbench`, {cols: 80, rows: 10});
+    h.open('wb', `${h.envLine({WHATNEXT_WORKBENCH_SPLIT: '1'})} node '${CLI}' workbench`, {cols: 80, rows: 10});
     await h.waitFor(/whatnext is not running\. Start whatnext first\.\nPress any key to close\./, 5000, 'wb');
     expect(h.screen('wb')).not.toMatch(/\[exit/);
     await h.keysTo('wb', 'x');

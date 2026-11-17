@@ -5,7 +5,8 @@ import {afterEach, describe, expect, it} from 'vitest';
 import {CLI, sleep} from '../e2e/harness.js';
 import {RealHarness, removeMine, startBg, waitAgent} from './real-harness.js';
 
-// 58a: Ghostty で ctrl+q ctrl+w と一覧の w が、作業台の画面のタブを作る(なければ)か、そのタブへ移る(あれば)。
+// 58a: Ghostty で ctrl+q ctrl+w と一覧の w が、作業台の画面の分割を作る(なければ)か、その分割へ移る(あれば)。
+// 58b: 一覧の t は、分割の代わりに新しいタブで作業台の画面を開く。
 // AppleScript で前面に新しいウィンドウを開いて操作し、終わったら閉じる(working-with-tmux、driving-whatnext-in-tmux スキル)。
 
 const osa = (script: string): string => execFileSync('osascript', ['-e', script], {encoding: 'utf8'}).trim();
@@ -61,10 +62,10 @@ async function until(pred: () => boolean, timeout = 15000, what = 'condition'): 
     if (pred()) return;
     await sleep(300);
   }
-  throw new Error(`timed out: ${what}; tabs ${tabCount()}; terminals ${JSON.stringify(terms())}`);
+  throw new Error(`timed out: ${what}; terminals ${JSON.stringify(terms())}`);
 }
 
-/** Ghostty を前面に出し、最初のタブの左の分割にフォーカスを戻す(テストの最中に別のアプリが前に出ると、whatnext はタブを作らない)。 */
+/** Ghostty を前面に出し、左の分割にフォーカスを戻す(テストの最中に別のアプリが前に出ると、whatnext は分割を作らない)。 */
 const focusLeft = (left: string) =>
   osa(`tell application "Ghostty"
     activate
@@ -87,7 +88,7 @@ async function selectInList(name: string): Promise<void> {
 }
 
 describe('Ghostty(58a)', () => {
-  it('ctrl+q ctrl+w と一覧の w は、作業台の画面のタブを作り、あればそのタブへ移る。押したタブは分割せず、ふだんのシェルの分割には触れない', async () => {
+  it('ctrl+q ctrl+w と一覧の w は、作業台の画面の分割を右に作り、あればその分割へ移る。ふだんのシェルの分割には触れない。一覧の t は新しいタブに開く', async () => {
     startBg('wn-real-gh');
     await waitAgent(a => a.some(x => x.name === 'wn-real-gh'));
     h = new RealHarness();
@@ -124,12 +125,11 @@ describe('Ghostty(58a)', () => {
         send key "w" modifiers "control" to t
       end tell`,
     );
-    await until(() => tabCount() === 2, 15000, 'workbench tab');
-    await until(() => focusedName() === 'whatnext workbench', 10000, 'focus on workbench');
-    expect(terms().length).toBe(1);
-    expect(firstTabTerms()).toBe(2);
+    await until(() => terms().length === 3, 15000, 'workbench split');
+    await until(() => terms().some(t => t.name === 'whatnext workbench'), 10000, 'workbench title');
+    await until(() => focusedName() === 'whatnext workbench', 5000, 'focus on workbench');
     expect(h.sessions().some(s => s.startsWith('sh-'))).toBe(true);
-    // 元のタブに戻ってもう一度押すと、タブは増えずにフォーカスだけが移る
+    // 左に戻ってもう一度押すと、分割は増えずにフォーカスだけが移る
     focusLeft(left);
     await sleep(500);
     osa(
@@ -141,8 +141,9 @@ describe('Ghostty(58a)', () => {
       end tell`,
     );
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus again');
-    expect(tabCount()).toBe(2);
-    expect(firstTabTerms()).toBe(2);
+    expect(terms().length).toBe(3);
+    // ふだんのシェルの分割には何も入力されていない(名前と id がそのまま)
+    expect(terms().some(t => t.id === shell)).toBe(true);
     // 一覧に戻って w を押しても同じく移るだけ
     focusLeft(left);
     await sleep(300);
@@ -159,14 +160,12 @@ describe('Ghostty(58a)', () => {
     await sleep(300);
     listKey('w');
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus by w');
-    expect(tabCount()).toBe(2);
-    // whatnext を終了すると、whatnext が作ったタブは閉じる
+    expect(terms().length).toBe(3);
+    // whatnext を終了すると、whatnext が作った分割は閉じる
     listKey('q');
-    await until(() => tabCount() === 1, 15000, 'tab closed');
-    // ふだんのシェルの分割はそのまま残っている(id がそのまま)
-    expect(terms().length).toBe(2);
+    await until(() => terms().length === 2, 15000, 'split closed');
     expect(terms().some(t => t.id === shell)).toBe(true);
-    // 一覧の w でも、なければタブを作る
+    // 一覧の w でも、なければ右に分割を作る
     osa(`tell application "Ghostty" to input text "sh ${q(script)}" to (first terminal whose id is "${left}")`);
     osa(`tell application "Ghostty" to send key "enter" to (first terminal whose id is "${left}")`);
     await until(() => /SESSION/.test(listScreen()), 20000, 'list again');
@@ -174,9 +173,31 @@ describe('Ghostty(58a)', () => {
     await sleep(300);
     await selectInList('wn-real-gh');
     listKey('w');
-    await until(() => tabCount() === 2, 15000, 'tab by w');
+    await until(() => terms().length === 3, 15000, 'split by w');
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus after w');
     listKey('q');
-    await until(() => tabCount() === 1, 15000, 'tab closed again');
+    await until(() => terms().length === 2, 15000, 'split closed again');
+    // 58b: 一覧の t は、押したタブを分割せず、新しいタブで作業台の画面を開く
+    osa(`tell application "Ghostty" to input text "sh ${q(script)}" to (first terminal whose id is "${left}")`);
+    osa(`tell application "Ghostty" to send key "enter" to (first terminal whose id is "${left}")`);
+    await until(() => /SESSION/.test(listScreen()), 20000, 'list for t');
+    focusLeft(left);
+    await sleep(300);
+    await selectInList('wn-real-gh');
+    listKey('t');
+    await until(() => tabCount() === 2, 15000, 'tab by t');
+    await until(() => focusedName() === 'whatnext workbench', 8000, 'focus after t');
+    expect(firstTabTerms()).toBe(2);
+    // 元のタブに戻って w を押しても、分割もタブも増えず、作業台の画面のタブへ移る
+    focusLeft(left);
+    await sleep(500);
+    listKey('w');
+    await until(() => focusedName() === 'whatnext workbench', 8000, 'focus by w to the tab');
+    expect(tabCount()).toBe(2);
+    expect(firstTabTerms()).toBe(2);
+    // whatnext を終了すると、whatnext が作ったタブは閉じる
+    listKey('q');
+    await until(() => tabCount() === 1, 15000, 'tab closed');
+    expect(terms().some(t => t.id === shell)).toBe(true);
   });
 });

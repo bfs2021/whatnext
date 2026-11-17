@@ -104,7 +104,7 @@ export function paneCommand(env: Env, role: 'list' | 'guide', pe: NodeJS.Process
   return `exec env ${assigns.join(' ')} ${shq(env.node)} ${shq(env.cli)}`;
 }
 
-/** Ghostty のタブに打ち込む `whatnext workbench`。`exec` は `tabWorkbench` が付けるので、ここでは付けない。 */
+/** Ghostty の分割やタブに打ち込む `whatnext workbench`。`exec` は `splitWorkbench` と `tabWorkbench` が付けるので、ここでは付けない。 */
 export function workbenchCommand(env: Pick<Env, 'node' | 'cli'>): string {
   return `${shq(env.node)} ${shq(env.cli)} workbench`;
 }

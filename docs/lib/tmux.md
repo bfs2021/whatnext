@@ -41,9 +41,10 @@
 ## Ghostty（`ghostty.ts`）
 
 - `focusWorkbench(run)`：名前が `whatnext workbench` の Ghostty の端末へフォーカスを移す。別のタブにあれば、そのタブに切り替わる。
-- `tabWorkbench(run, command, env)`：前面の Ghostty のウィンドウに新しいタブを開き、` exec <command>` と改行を打ち込む（先頭の空白でシェルの履歴に残さない。`exec` はこの関数が付けるので、`command` に `exec` を付けない）（[ADR-0015](../adr/0015-ghostty-split-for-workbench-on-ctrl-q-ctrl-w.md)）。
-- 結果は `focused`、`tab`、`none`（作業台の画面がない）、`notfront`（Ghostty が前面にない）、`failed`。Ghostty の端末で押したときだけ呼ぶかは、使う側が `client_termname` で決める。
+- `splitWorkbench(run, command, env)`：前面の Ghostty の、フォーカスのある分割を右に分割し、` exec <command>` と改行を打ち込む（先頭の空白でシェルの履歴に残さない。`exec` はこの関数が付けるので、`command` に `exec` を付けない）（[ADR-0015](../adr/0015-ghostty-split-for-workbench-on-ctrl-q-ctrl-w.md)）。
+- `tabWorkbench(run, command, env)`：前面の Ghostty のウィンドウに新しいタブを開き、`splitWorkbench` と同じ文字列を打ち込む（`exec` の扱いも同じ）。
+- 結果は `focused`、`split`、`tab`、`none`（作業台の画面がない）、`notfront`（Ghostty が前面にない）、`failed`。Ghostty の端末で押したときだけ呼ぶかは、使う側が `client_termname` で決める。
 
 ## テスト
 
-単体のテスト（`lib/tmux/tmux.test.ts`、`lib/tmux/ghostty.test.ts`）は、Ghostty のタブに打ち込む文字列、設定の中身、sh の本文の文法、プロセス表の判定と、偽の `tmux` を `PATH` に置いて動かす `pane-died` の案内のペインの扱い（起動し直し、数え方、数でない値、印のないペイン、案内のセッションの最後のペイン）を確かめる。tmux を実際に動かす確かめは、使う側の画面の通し（サイクル9の `test/e2e/`）が担う。
+単体のテスト（`lib/tmux/tmux.test.ts`、`lib/tmux/ghostty.test.ts`）は、Ghostty の分割とタブに打ち込む文字列、設定の中身、sh の本文の文法、プロセス表の判定と、偽の `tmux` を `PATH` に置いて動かす `pane-died` の案内のペインの扱い（起動し直し、数え方、数でない値、印のないペイン、案内のセッションの最後のペイン）を確かめる。tmux を実際に動かす確かめは、使う側の画面の通し（サイクル9の `test/e2e/`）が担う。

@@ -1,20 +1,23 @@
 import {execFileSync} from 'node:child_process';
 import {describe, expect, it} from 'vitest';
 import type {Run} from '../../lib/input/exec.js';
-import {tabWorkbench} from '../../lib/tmux/ghostty.js';
+import {splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {workbenchCommand} from '../../src/cli/env.js';
 
-// Ghostty のタブに打ち込む `whatnext workbench`(ADR-0015)。一覧が渡すコマンドを `tabWorkbench` に通した文字列を確かめる。
+// Ghostty の分割とタブに打ち込む `whatnext workbench`(ADR-0015)。一覧が渡すコマンドを `splitWorkbench` と `tabWorkbench` に通した文字列を確かめる。
 
-describe('Ghostty のタブに打ち込むコマンド', () => {
+describe.each([
+  ['split', splitWorkbench],
+  ['tab', tabWorkbench],
+] as const)('Ghostty の分割とタブに打ち込むコマンド(%s)', (done, open) => {
   const typed = async (): Promise<string> => {
     const inputs: string[] = [];
     // osascript の引数のうち、打ち込む文字列は改行で終わるもの(並びには頼らない)
     const fake: Run = async (_cmd, args) => {
       inputs.push(...args.filter(a => a.endsWith('\n') && !a.includes('tell application')));
-      return {code: 0, stdout: 'tab\n', stderr: ''};
+      return {code: 0, stdout: `${done}\n`, stderr: ''};
     };
-    await tabWorkbench(fake, workbenchCommand({node: '/bin/echo', cli: "/tmp/it's/cli.js"}), {});
+    await open(fake, workbenchCommand({node: '/bin/echo', cli: "/tmp/it's/cli.js"}), {});
     expect(inputs).toHaveLength(1);
     return inputs[0] ?? '';
   };
