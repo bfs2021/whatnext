@@ -6,6 +6,7 @@ import {CLI, sleep} from '../e2e/harness.js';
 import {RealHarness, removeMine, startBg, waitAgent} from './real-harness.js';
 
 // 58a: Ghostty で ctrl+q ctrl+w と一覧の w が、作業台の画面の分割を作る(なければ)か、その分割へ移る(あれば)。
+// 58b: 一覧の t は、分割の代わりに新しいタブで作業台の画面を開く。
 // AppleScript で前面に新しいウィンドウを開いて操作し、終わったら閉じる(working-with-tmux、driving-whatnext-in-tmux スキル)。
 
 const osa = (script: string): string => execFileSync('osascript', ['-e', script], {encoding: 'utf8'}).trim();
@@ -16,7 +17,7 @@ let win = '';
 afterEach(async () => {
   if (win) {
     try {
-      osa(`tell application "Ghostty" to close window id "${win}"`);
+      osa(`tell application "Ghostty" to close window (first window whose id is "${win}")`);
     } catch {}
   }
   win = '';
@@ -40,6 +41,15 @@ const terms = (): {id: string; name: string}[] =>
       const [id, name] = l.split('\t');
       return {id, name};
     });
+
+const tabCount = (): number =>
+  Number(osa(`tell application "Ghostty" to return count of tabs of (first window whose id is "${win}")`));
+
+/** 最初のタブ(whatnext を起動したタブ)の分割の数。 */
+const firstTabTerms = (): number =>
+  Number(
+    osa(`tell application "Ghostty" to return count of terminals of tab 1 of (first window whose id is "${win}")`),
+  );
 
 const focusedName = () =>
   osa(
@@ -78,7 +88,7 @@ async function selectInList(name: string): Promise<void> {
 }
 
 describe('Ghostty(58a)', () => {
-  it('ctrl+q ctrl+w と一覧の w は、作業台の画面の分割を右に作り、あればその分割へ移る。ふだんのシェルの分割には触れない', async () => {
+  it('ctrl+q ctrl+w と一覧の w は、作業台の画面の分割を右に作り、あればその分割へ移る。ふだんのシェルの分割には触れない。一覧の t は新しいタブに開く', async () => {
     startBg('wn-real-gh');
     await waitAgent(a => a.some(x => x.name === 'wn-real-gh'));
     h = new RealHarness();
@@ -167,5 +177,40 @@ describe('Ghostty(58a)', () => {
     await until(() => focusedName() === 'whatnext workbench', 8000, 'focus after w');
     listKey('q');
     await until(() => terms().length === 2, 15000, 'split closed again');
+    // 58b: 一覧の t は、押したタブを分割せず、新しいタブで作業台の画面を開く
+    osa(`tell application "Ghostty" to input text "sh ${q(script)}" to (first terminal whose id is "${left}")`);
+    osa(`tell application "Ghostty" to send key "enter" to (first terminal whose id is "${left}")`);
+    await until(() => /SESSION/.test(listScreen()), 20000, 'list for t');
+    focusLeft(left);
+    await sleep(300);
+    await selectInList('wn-real-gh');
+    listKey('t');
+    await until(() => tabCount() === 2, 15000, 'tab by t');
+    await until(() => focusedName() === 'whatnext workbench', 8000, 'focus after t');
+    expect(firstTabTerms()).toBe(2);
+    // 元のタブに戻って w を押しても、分割もタブも増えず、作業台の画面のタブへ移る
+    focusLeft(left);
+    await until(() => focusedName() !== 'whatnext workbench', 5000, 'back to the first tab');
+    listKey('w');
+    await until(() => focusedName() === 'whatnext workbench', 8000, 'focus by w to the tab');
+    expect(tabCount()).toBe(2);
+    expect(firstTabTerms()).toBe(2);
+    // タブの作業台の画面で ctrl+q ctrl+e を押すと、whatnext の画面のタブへ移り、メモの入力欄が見える
+    osa(
+      `tell application "Ghostty"
+        activate
+        set t to focused terminal of selected tab of (first window whose id is "${win}")
+        send key "q" modifiers "control" to t
+        send key "e" modifiers "control" to t
+      end tell`,
+    );
+    await until(() => focusedName() !== 'whatnext workbench', 8000, 'focus back to whatnext');
+    await until(() => /Note for wn-real-gh/.test(listScreen()), 5000, 'note input');
+    listKey('Escape');
+    await sleep(800);
+    // whatnext を終了すると、whatnext が作ったタブは閉じる
+    listKey('q');
+    await until(() => tabCount() === 1, 15000, 'tab closed');
+    expect(terms().some(t => t.id === shell)).toBe(true);
   });
 });

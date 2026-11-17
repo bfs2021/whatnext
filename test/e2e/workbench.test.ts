@@ -159,6 +159,24 @@ describe('作業台の画面', () => {
     expect(h.screen()).not.toMatch(/⚙/);
   });
 
+  it('Ghostty でない端末では、一覧の t と ctrl+q ctrl+t は w と同じに働く(作って知らせる、2回目は already exists)', async () => {
+    h = new Harness();
+    h.agents([bg('a', {name: 'alpha'}), bg('b', {name: 'beta'})]);
+    await h.start();
+    await h.select('alpha');
+    await h.keys('t');
+    await h.waitFor(/Workbench created\. Run "whatnext workbench" in a split to see it\./);
+    expect(h.sessions()).toContain('sh-a0000000');
+    await h.keys('t');
+    await h.waitFor(/Workbench already exists for alpha\./);
+    await h.select('beta');
+    await h.keys('Enter');
+    await h.waitFor(/fake claude attached/);
+    await h.keys('C-q', 'C-t');
+    await h.waitFor(/Workbench created\. Run "whatnext workbench" in a split to see it\./);
+    expect(h.sessions()).toContain('sh-b0000000');
+  });
+
   it('58・60: ctrl+q ctrl+w で作り、2回目は already exists。作業台の画面の ctrl+q ctrl+l、ctrl+q ctrl+v、ctrl+q c', async () => {
     h = new Harness();
     const app = h.repo('app');

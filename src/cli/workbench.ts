@@ -60,8 +60,8 @@ async function waitForGuide(tmux: Tmux, env: Env): Promise<boolean> {
 }
 
 /**
- * 失敗して終わる。Ghostty の分割から `exec` で起動したとき(`WHATNEXT_WORKBENCH_SPLIT=1`)は、
- * 終わると分割ごと閉じてエラーが読めないので、キーを待ってから終わる。
+ * 失敗して終わる。Ghostty の分割かタブから `exec` で起動したとき(`WHATNEXT_WORKBENCH_SPLIT=1`)は、
+ * 終わると分割やタブごと閉じてエラーが読めないので、キーを待ってから終わる。
  */
 async function exitWithError(): Promise<number> {
   if (process.env.WHATNEXT_WORKBENCH_SPLIT !== '1' || !process.stdin.isTTY) return 1;

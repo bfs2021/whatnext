@@ -7,7 +7,7 @@ import type {Supplied} from '../../lib/input/hooks.js';
 import {firstLine, leadLine} from '../../lib/input/text.js';
 import {color} from '../../lib/text/text.js';
 import {statusLabel, type Tier} from '../../lib/tier/classify.js';
-import {focusWorkbench, splitWorkbench} from '../../lib/tmux/ghostty.js';
+import {focusTerminal, focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
 import type {Observation, ObsRow} from '../input/observe.js';
 import {locate} from '../input/where.js';
@@ -778,10 +778,11 @@ export class App {
       if (!busy) void this.enter(row);
       return;
     }
-    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 'v')) return;
+    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 't' || str === 'v')) return;
     if (str === 'e') this.openNote(sid);
     else if (str === 'f') this.openWait(sid);
-    else if (str === 'w') void this.createWorkbench(sid, {from: 'list'});
+    else if (str === 'w') void this.createWorkbench(sid, {from: 'list', place: 'split'});
+    else if (str === 't') void this.createWorkbench(sid, {from: 'list', place: 'tab'});
     else if (str === 'v') void this.openVsCode(sid, {from: 'list'});
   }
 
@@ -1149,8 +1150,14 @@ export class App {
       if (sid) void this.openVsCode(sid, {from: 'attach', tty});
       return;
     }
-    if (action === 'workbench') {
-      if (sid) void this.createWorkbench(sid, {from: 'attach', tty, termname});
+    if (action === 'workbench' || action === 'workbenchTab') {
+      if (sid)
+        void this.createWorkbench(sid, {
+          from: 'attach',
+          tty,
+          termname,
+          place: action === 'workbench' ? 'split' : 'tab',
+        });
       return;
     }
     // 一覧に戻ってから処理する
@@ -1159,6 +1166,11 @@ export class App {
     if (!main) {
       await this.p.tmux.display(tty, 'The list is not open. Run "whatnext" to open it.', 3000);
       return;
+    }
+    // 作業台の画面で押したときは、whatnext の画面へフォーカスを移す(入力欄や確認を開いたまま、
+    // 続きの文字が作業台のシェルに入るのを避ける)。隣の分割でも、別のタブでも移す
+    if (tty !== main.tty && termname.includes('ghostty')) {
+      void focusTerminal(this.p.run, main.tty).then(res => this.p.log(`ghostty main ${res}`));
     }
     if (main.session !== LIST) {
       const from = main.session;
@@ -1359,7 +1371,11 @@ export class App {
 
   private async createWorkbench(
     sid: string,
-    via: {from: 'list'} | {from: 'guide'} | {from: 'attach'; tty: string; termname: string},
+    /** `place` は、Ghostty で作業台の画面が開いていないときに開く場所(案内の `Enter` は開かないので持たない)。 */
+    via:
+      | {from: 'list'; place: 'split' | 'tab'}
+      | {from: 'guide'}
+      | {from: 'attach'; tty: string; termname: string; place: 'split' | 'tab'},
   ): Promise<void> {
     const row = this.rows.get(sid);
     if (!row) return;
@@ -1386,14 +1402,14 @@ export class App {
     if (via.from !== 'guide' && termname.includes('ghostty')) {
       const res = wbOpen
         ? await focusWorkbench(this.p.run)
-        : await splitWorkbench(this.p.run, this.p.workbenchCommand, {
+        : await (via.place === 'tab' ? tabWorkbench : splitWorkbench)(this.p.run, this.p.workbenchCommand, {
             WHATNEXT_TMUX_SOCKET: this.p.socket,
             WHATNEXT_PORT: String(this.p.port),
-            // 失敗したときにキーを待たせる(`exec` で動くので、終わると分割ごと閉じる)
+            // 失敗したときにキーを待たせる(`exec` で動くので、終わると分割やタブごと閉じる)
             WHATNEXT_WORKBENCH_SPLIT: '1',
           });
       this.p.log(`ghostty ${res}`);
-      if (res === 'focused' || res === 'split') {
+      if (res === 'focused' || res === 'split' || res === 'tab') {
         this.follow();
         return;
       }

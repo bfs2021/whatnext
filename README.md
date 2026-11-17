@@ -19,7 +19,7 @@ When you split work across sessions (an implementation and its review, a big tas
 npx @masahirompp/whatnext
 ```
 
-To see a session's workbench shell next to it, split your terminal (e.g. `cmd+d` in Ghostty) and run this in the new split. It follows the session you are looking at; close the split when you no longer need it. In Ghostty, `ctrl+q ctrl+w` on a session (or `w` in the list) opens this split for you (or moves to it if it is already open).
+To see a session's workbench shell next to it, split your terminal (e.g. `cmd+d` in Ghostty) and run this in the new split. It follows the session you are looking at; close the split when you no longer need it. In Ghostty, `ctrl+q ctrl+w` on a session (or `w` in the list) opens this split for you (or moves to it if it is already open). To keep the session's screen at full width, `ctrl+q ctrl+t` (or `t` in the list) opens the workbench in a new Ghostty tab instead.
 
 ```sh
 npx @masahirompp/whatnext workbench
@@ -35,7 +35,8 @@ Keys in the list:
 | `Ctrl+X` | Stop the session; press again within 2s to delete it (asks before deleting the sessions it waits for) |
 | `e` | Write a one-line note on the session (an empty note removes it) |
 | `f` | Choose the sessions this one waits for (or start a new one to wait for) |
-| `w` | Create the session's workbench shell |
+| `w` | Create the session's workbench shell (in Ghostty, also opens it in a split) |
+| `t` | Same as `w`, but in Ghostty opens it in a new tab |
 | `v` | Open the session's directory in VS Code |
 | `r` | Refresh |
 | `q` | Quit (asks first if something is still running in a workbench) |
