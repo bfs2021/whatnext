@@ -13,7 +13,7 @@ mod はターンの終わりに Haiku を1回呼んでまとめ（目的・現�
 
 - **mod の API（Claude Code の早期公開版）**：`turn.complete` などのイベント、`$.model.complete`、`$.session.messages`、`$.ui.open`、`$.http.fetch`、`$.env.get`。型の宣言の先頭に「リリースの間で予告なく変わりうる」とある。whatnext が追従を引き受け、`claude` を更新したあとに確かめる対象に入れる（checking-claude-cli スキル）。mod の読み込みは Claude Code の段階的な公開のスイッチで決まり、スイッチが入っていない環境では mod が動かない。そのときは目的の行も右の欄の中身も出ないだけで、一覧のほかの挙動は変わらない。
 - **依存するコマンドは増えない**。[ADR-0008](0008-dependencies-and-contact-points-with-tmux.md) の「本体が依存するコマンドは `claude`、`git`、`tmux` だけ」は保つ。mod は `claude` の中で動き、受け口へは `claude` 自身が送る（フックと OTel と同じ。[ADR-0009](0009-receive-hooks-and-otel-from-launched-sessions.md)）。[ADR-0004](0004-depend-only-on-claude-and-git.md)（`claude` と `git` だけに頼る。ADR-0005、0008 で改訂済み）が守ろうとしたのは「依存先のない環境でも本体が同じように動くこと」で、`--recap` を付けなければ mod も API も使わないので、これは崩れない。崩れるのは「`claude` との接点はコマンド、フック、OTel、会話記録だけ」という見込みで、`--recap` のときだけ、そこに mod の API が加わる。
-- **利用枠**：まとめを付けたセッションは、ターンごとに Haiku を1回呼ぶ。そのためオプトインにし、起動時のオプションで有効にする（PRODUCT.md「全体」の決まり）。
+- **利用枠**：まとめを付けたセッションは、ターンごとに Haiku を1回呼ぶ（`--recap` の whatnext がまとめを受けていないときは呼ばない。DESIGN.md「まとめの mod」）。そのためオプトインにし、起動時のオプションで有効にする（PRODUCT.md「全体」の決まり）。
 
 ## 置き場所と層
 

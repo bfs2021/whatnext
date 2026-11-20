@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {stripAnsi, width} from '../../lib/text/text.js';
 import {parseArgs} from '../../src/cli/args.js';
-import {recapOffText, withRecapPort} from '../../src/cli/list.js';
+import {findTmux, recapOffText, withRecapEnv} from '../../src/cli/list.js';
 import {parseRecapBody, RecapHookStore, sanitize} from '../../src/input/recap.js';
 import {hyperlink, render, SIDE_MIN_COLS, sideLines, wrap} from '../../src/screen/screen.js';
 import type {Screen, ScreenRow} from '../../src/screen/types.js';
@@ -66,10 +66,13 @@ describe('まとめの受け口', () => {
     expect(s.get('s1').prompt?.text).toBe('hello');
   });
 
-  it('mod に送り先のポートを渡す', () => {
-    const j = JSON.parse(withRecapPort(JSON.stringify({hooks: {}, env: {A: '1'}}), 14555));
-    expect(j.env).toEqual({A: '1', WHATNEXT_RECAP_PORT: '14555'});
+  it('mod に送り先のポートと、受けているかを確かめる tmux を渡す', () => {
+    const add = {WHATNEXT_RECAP_PORT: '14555', WHATNEXT_RECAP_TMUX: '/x/tmux', WHATNEXT_RECAP_SOCKET: '/tmp/s'};
+    const j = JSON.parse(withRecapEnv(JSON.stringify({hooks: {}, env: {A: '1'}}), add));
+    expect(j.env).toEqual({A: '1', ...add});
     expect(j.hooks).toEqual({});
+    expect(findTmux('/nonexistent')).toBe('tmux');
+    expect(findTmux(`/nonexistent:${process.env.PATH}`)).toMatch(/\/tmux$/);
   });
 });
 

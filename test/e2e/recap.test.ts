@@ -169,6 +169,12 @@ describe('まとめ', () => {
     expect(call?.args[i + 1]).toBe(join(REPO, 'mod'));
     const settings = JSON.parse(call?.args[(call?.args.indexOf('--settings') ?? 0) + 1] ?? '{}');
     expect(settings.env.WHATNEXT_RECAP_PORT).toBe(String(h.port));
+    // mod が「まとめを受けているか」を確かめる口: 専用サーバの @wn_recap_port に受け口のポートを置く
+    expect(settings.env.WHATNEXT_RECAP_TMUX).toMatch(/\/tmux$/);
+    expect(settings.env.WHATNEXT_RECAP_SOCKET).toMatch(new RegExp(`/${escapeRe(h.socket)}$`));
+    expect(h.inner('-S', settings.env.WHATNEXT_RECAP_SOCKET, 'show-options', '-sqv', '@wn_recap_port').trim()).toBe(
+      String(h.port),
+    );
   });
 
   it('83: --recap なしの n には mod が付かない', async () => {
@@ -179,6 +185,8 @@ describe('まとめ', () => {
     await h.waitFor(/fake claude attached/, 10000);
     const call = h.calls().find(c => c.args[0] === '--bg');
     expect(call?.args).not.toContain('--plugin-dir');
+    // まとめを受けていないので、mod が確かめる口も置かない
+    expect(h.inner('show-options', '-sqv', '@wn_recap_port').trim()).toBe('');
   });
 
   it('84: o でカーソルの行のリンクを選んで開く。リンクのない行では、ないことを示す', async () => {
@@ -304,6 +312,7 @@ describe('まとめ', () => {
       const call = h.calls().find(c => c.args[0] === '--bg');
       expect(h.log()).toMatch(/occupant=other receiver=none recap=true/);
       expect(call?.args).not.toContain('--plugin-dir');
+      expect(h.inner('show-options', '-sqv', '@wn_recap_port').trim()).toBe('');
       await h.keys('C-q', 'C-l');
       await h.select('alpha');
       const s = await h.waitFor(/│ alpha/);

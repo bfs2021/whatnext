@@ -1,4 +1,4 @@
-import {appendFileSync} from 'node:fs';
+import {accessSync, appendFileSync, constants} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {emitKeypressEvents} from 'node:readline';
@@ -13,7 +13,7 @@ import {Locations, Prs} from '../input/where.js';
 import {App} from '../ops/app.js';
 import {startGuide} from '../ops/guide-session.js';
 import {ATTACH_KEYS, ATTACH_KEYS_HELP} from '../ops/keys.js';
-import {RECAP_ON} from '../ops/names.js';
+import {RECAP_LIVE, RECAP_ON} from '../ops/names.js';
 import {StateFile, statePath} from '../state/state.js';
 import {type Env, modDir, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
 
@@ -48,10 +48,7 @@ export async function startList(env: Env): Promise<number> {
     if (rec) {
       settings = launchSettings(env.port);
       // まとめの mod は、受け口を開けたときだけ付ける(フックと同じ。DESIGN.md「まとめの mod」)
-      if (env.recap) {
-        settings = withRecapPort(settings, env.port);
-        pluginDir = modDir();
-      }
+      if (env.recap) pluginDir = modDir();
     }
   }
   // --recap で受け口を開けなかったときは、右の欄にその理由を出す(シナリオ 41 の「エラーを示さない」の、--recap のときだけの例外)
@@ -78,6 +75,18 @@ export async function startList(env: Env): Promise<number> {
   await tmux.t(['set', '-w', '-t', `=${LIST}:`, 'remain-on-exit', 'off']);
   if (env.recap) await tmux.setOption(RECAP_ON, '1');
   else await tmux.unsetOption(RECAP_ON);
+  // mod が「まとめを受けているか」を確かめる口(受け口を開けて mod を付けるときだけ置く)
+  if (settings && pluginDir) {
+    const sock = (await tmux.t(['display-message', '-p', '-t', `=${LIST}:`, '#{socket_path}'])).stdout.trim();
+    settings = withRecapEnv(settings, {
+      WHATNEXT_RECAP_PORT: String(env.port),
+      WHATNEXT_RECAP_TMUX: findTmux(),
+      ...(sock ? {WHATNEXT_RECAP_SOCKET: sock} : {}),
+    });
+    await tmux.t(['set', '-s', RECAP_LIVE, String(env.port)]);
+  } else {
+    await tmux.t(['set', '-su', RECAP_LIVE]);
+  }
   const guideCommand = paneCommand(env, 'guide');
   await startGuide(tmux, guideCommand, homedir());
 
@@ -140,15 +149,28 @@ export async function startList(env: Env): Promise<number> {
   return await new Promise<number>(() => {});
 }
 
-/** `--settings` の JSON の `env` に、mod が送る先のポートを足す。 */
-export function withRecapPort(settings: string, port: number): string {
+/** `--settings` の JSON の `env` に、まとめの mod が読む値(送る先のポート、受けているかを確かめる tmux)を足す。 */
+export function withRecapEnv(settings: string, add: Record<string, string>): string {
   try {
     const j = JSON.parse(settings) as {env?: Record<string, string>};
-    j.env = {...(j.env ?? {}), WHATNEXT_RECAP_PORT: String(port)};
+    j.env = {...(j.env ?? {}), ...add};
     return JSON.stringify(j);
   } catch {
     return settings;
   }
+}
+
+/** tmux の実行ファイルの絶対パス(`claude --bg` のセッションの PATH に tmux があるとは限らない)。なければ `tmux`。 */
+export function findTmux(path = process.env.PATH ?? ''): string {
+  for (const dir of path.split(':')) {
+    if (!dir) continue;
+    const p = join(dir, 'tmux');
+    try {
+      accessSync(p, constants.X_OK);
+      return p;
+    } catch {}
+  }
+  return 'tmux';
 }
 
 /** 受け口を開けなかった理由の文言(右の欄。`--recap` のときだけ)。 */

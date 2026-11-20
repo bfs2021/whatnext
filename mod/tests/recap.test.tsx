@@ -33,12 +33,36 @@ interface Posted {
 /** The engine beneath the mod: `history` the conversation, `answer` what Haiku says, posts kept in `posted`. */
 function engine(
   on: On,
-  opts: {history?: () => readonly SessionMessage[]; answer?: string; port?: string; asks?: string[]} = {},
+  opts: {
+    history?: () => readonly SessionMessage[];
+    answer?: string;
+    port?: string;
+    asks?: string[];
+    /**
+     * What whatnext's tmux server holds in `@wn_recap_port` (the port it takes recaps on); null when no server,
+     * an Error when tmux cannot start.
+     */
+    live?: () => string | null | Error;
+    checks?: string[][];
+  } = {},
 ): Posted[] {
   const posted: Posted[] = [];
+  const vars: Record<string, string | undefined> = {
+    WHATNEXT_RECAP_PORT: opts.port,
+    WHATNEXT_RECAP_TMUX: '/opt/tmux',
+    WHATNEXT_RECAP_SOCKET: '/tmp/tmux-501/whatnext',
+  };
   on('session.messages', () => ({value: (opts.history?.() ?? []) as SessionMessage[]}));
   on('session.id', () => ({value: 'sid-1'}));
-  on('env.get', (_, e) => ({value: e.name === 'WHATNEXT_RECAP_PORT' ? opts.port : undefined}));
+  on('env.get', (_, e) => ({value: vars[e.name]}));
+  on('process.run', (_, e) => {
+    opts.checks?.push([...e.argv]);
+    const live = opts.live ? opts.live() : (opts.port ?? '14318');
+    if (live instanceof Error) throw live;
+    const cut = {isStdoutTruncated: false, isStderrTruncated: false};
+    if (live === null) return {value: {exitCode: 1, stdout: '', stderr: 'no server running', ...cut}};
+    return {value: {exitCode: 0, stdout: `${live}\n`, stderr: '', ...cut}};
+  });
   on('model.complete', (_, e) => {
     opts.asks?.push(String(e.prompt));
     if (opts.answer === undefined || e.system !== RECAP_SYSTEM) {
@@ -182,4 +206,60 @@ test("a tool call's output is not listed; its URL argument is", async ($, on) =>
   await $.turn.complete({answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer'} as never);
   await settle();
   expect(posted.at(-1)?.body.links).toEqual([{label: 'docs.example.com/mods', href: 'https://docs.example.com/mods'}]);
+});
+
+test('with no whatnext taking recaps, a turn end calls no model and sends nothing; it resumes once one does', async ($, on) => {
+  const asks: string[] = [];
+  const checks: string[][] = [];
+  let live: string | null = null;
+  const posted = engine(on, {
+    history: () => [{role: 'user', text: 'x', toolUses: []}],
+    port: '15555',
+    asks,
+    checks,
+    live: () => live,
+    answer: '{"goal": "G", "now": "N", "next": "X"}',
+  });
+  await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
+  // whatnext quit: its tmux server is gone
+  await turn($, 'x', 'https://github.com/acme/app/pull/1');
+  expect(checks.at(-1)).toEqual([
+    '/opt/tmux',
+    '-S',
+    '/tmp/tmux-501/whatnext',
+    'show-options',
+    '-sqv',
+    '@wn_recap_port',
+  ]);
+  // whatnext runs again, without --recap (the option unset), or takes recaps on another port
+  live = '';
+  await turn($, 'x', 'ok', 't2');
+  live = '14318';
+  await turn($, 'x', 'ok', 't3');
+  expect(asks).toEqual([]);
+  expect(posted).toEqual([]);
+  // the pane still keeps the links
+  const ui = await $.ui.mount({...PANE, surface: 'terminal'});
+  expect((await ui.findAll({type: 'Link'})).map(l => l.props.href)).toEqual(['https://github.com/acme/app/pull/1']);
+  await ui.unmount();
+  // whatnext runs with --recap again: the next turn end recaps and sends
+  live = '15555';
+  await turn($, 'x', 'ok', 't4');
+  expect(asks.length).toBe(1);
+  expect(posted.at(-1)?.url).toBe('http://127.0.0.1:15555/v1/hooks');
+  expect(posted.at(-1)?.body.recap).toEqual({goal: 'G', now: 'N', next: 'X'});
+});
+
+test('a check that cannot run counts as no whatnext taking recaps', async ($, on) => {
+  const asks: string[] = [];
+  const posted = engine(on, {
+    history: () => [{role: 'user', text: 'x', toolUses: []}],
+    asks,
+    answer: '{"goal": "G"}',
+    live: () => new Error('cannot start'),
+  });
+  await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
+  await turn($, 'x', 'ok');
+  expect(asks).toEqual([]);
+  expect(posted).toEqual([]);
 });
