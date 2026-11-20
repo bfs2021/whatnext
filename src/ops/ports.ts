@@ -29,6 +29,8 @@ export interface Ports {
   pluginDir?: string;
   /** `--recap` で動いているか。 */
   recap: boolean;
+  /** `--recap` で動いているのに受け口を開けなかった理由(右の欄に出す英語の文言)。開けたときは undefined。 */
+  recapOff?: string;
   socket: string;
   port: number;
   version: string;

@@ -490,7 +490,7 @@ export class App {
     const cur = this.cursor ? this.rows.get(this.cursor) : undefined;
     if (this.p.recap && cur) {
       const f = this.recaps.get(cur.sid);
-      s.side = {title: cur.name, recap: f?.recap, links: f?.links ?? []};
+      s.side = {title: cur.name, recap: f?.recap, links: f?.links ?? [], off: this.p.recapOff};
     }
     if (this.error) s.message = this.error;
     else if (this.lay.order.length === 0)

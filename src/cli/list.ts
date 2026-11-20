@@ -54,6 +54,8 @@ export async function startList(env: Env): Promise<number> {
       }
     }
   }
+  // --recap で受け口を開けなかったときは、右の欄にその理由を出す(シナリオ 41 の「エラーを示さない」の、--recap のときだけの例外)
+  const recapOff = env.recap && !settings ? recapOffText(occupant, env.port) : undefined;
   log(
     `start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'} recap=${env.recap}`,
   );
@@ -96,6 +98,7 @@ export async function startList(env: Env): Promise<number> {
     settings,
     pluginDir,
     recap: env.recap,
+    recapOff,
     socket: env.socket,
     port: env.port,
     version: env.version,
@@ -146,4 +149,11 @@ export function withRecapPort(settings: string, port: number): string {
   } catch {
     return settings;
   }
+}
+
+/** 受け口を開けなかった理由の文言(右の欄。`--recap` のときだけ)。 */
+export function recapOffText(occupant: 'free' | 'whatnext' | 'other', port: number): string {
+  if (occupant === 'other') return `Recaps are off: port ${port} is used by another program.`;
+  if (occupant === 'whatnext') return `Recaps are off: port ${port} is used by another whatnext.`;
+  return `Recaps are off: could not open port ${port}.`;
 }

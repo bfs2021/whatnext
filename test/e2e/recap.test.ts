@@ -1,3 +1,4 @@
+import {type ChildProcess, spawn} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
@@ -278,6 +279,40 @@ describe('まとめ', () => {
     expect(osc8('https://github.com/acme/app/issues/412').exec(s)?.[1]).toBe('acme/app#412');
     // 見た目は今までと同じ(リンクの列は幅を取らない)
     expect(h.screen()).toMatch(/│ Links\n.*│ {3}PR #58\n.*│ {3}acme\/app#412/);
+  });
+
+  describe('41 の例外: 受け口のポートをほかのプログラムが使っているとき', () => {
+    let py: ChildProcess | undefined;
+    afterEach(() => {
+      py?.kill();
+      py = undefined;
+    });
+
+    it('--recap では mod を付けず、右の欄に、まとめが届かない理由を出す', async () => {
+      h = new Harness();
+      h.port = 15000 + Math.floor(Math.random() * 900);
+      py = spawn('python3', ['-m', 'http.server', String(h.port), '--bind', '127.0.0.1'], {
+        stdio: 'ignore',
+        cwd: h.dir,
+      });
+      await sleep(1500);
+      const app = h.repo('app');
+      h.agents([bg('alpha', {name: 'alpha', cwd: app})]);
+      await h.start({cwd: app, args: '--recap', size: {cols: 150, rows: 30}});
+      await h.keys('n', 'Enter');
+      await h.waitFor(/fake claude attached/, 10000);
+      const call = h.calls().find(c => c.args[0] === '--bg');
+      expect(h.log()).toMatch(/occupant=other receiver=none recap=true/);
+      expect(call?.args).not.toContain('--plugin-dir');
+      await h.keys('C-q', 'C-l');
+      await h.select('alpha');
+      const s = await h.waitFor(/│ alpha/);
+      capture('recap-port-used', s);
+      expect(s).not.toMatch(/Recaps come from sessions/);
+      expect(s).toMatch(new RegExp(`│ Recaps are off: port ${h.port} is used by another\\s*\\n.*│ program\\.`));
+      // ◎ の行と右の欄はそのまま(o links もキーの説明に残る)
+      expect(s).toMatch(/o links/);
+    });
   });
 
   it('86: --recap なしで動いている一覧に whatnext --recap でつなぐと、そのことが示される', async () => {

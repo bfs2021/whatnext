@@ -49,6 +49,8 @@ export interface Side {
   recap?: {goal: string; now: string; next: string};
   /** リンク(新しいもの順)。`href` は受け口が検査した http(s) の URL で、埋め込みのリンク(OSC 8)にする。 */
   links: {label: string; href: string}[];
+  /** まとめが届かない理由(受け口を開けなかったとき)。あれば「まだない」の文言の代わりに出す。 */
+  off?: string;
 }
 
 export interface Screen {

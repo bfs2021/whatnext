@@ -243,9 +243,8 @@ export function sideLines(side: Side, w: number, rows: number): string[] {
     field('Now', side.recap.now);
     field('Next', side.recap.next);
   } else {
-    for (const l of wrap('No recap yet. Recaps come from sessions started with n, when a turn ends.', w)) {
-      out.push(color.gray(l));
-    }
+    const why = side.off ?? 'No recap yet. Recaps come from sessions started with n, when a turn ends.';
+    for (const l of wrap(clean(why), w)) out.push(color.gray(l));
   }
   if (side.links.length > 0) {
     out.push('', color.bold('Links'));

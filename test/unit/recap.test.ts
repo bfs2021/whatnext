@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {stripAnsi, width} from '../../lib/text/text.js';
 import {parseArgs} from '../../src/cli/args.js';
-import {withRecapPort} from '../../src/cli/list.js';
+import {recapOffText, withRecapPort} from '../../src/cli/list.js';
 import {parseRecapBody, RecapHookStore, sanitize} from '../../src/input/recap.js';
 import {hyperlink, render, SIDE_MIN_COLS, sideLines, wrap} from '../../src/screen/screen.js';
 import type {Screen, ScreenRow} from '../../src/screen/types.js';
@@ -214,6 +214,19 @@ describe('まとめの画面', () => {
     expect(hyperlink('https://ja.wikipedia.org/wiki/東京', '東京')).toBe(
       '\x1b]8;;https://ja.wikipedia.org/wiki/東京\x1b\\東京\x1b]8;;\x1b\\',
     );
+  });
+
+  it('受け口を開けなかったときは、まだないことの代わりに理由を出す', () => {
+    const off = sideLines(
+      {title: 'demo', links: [], off: 'Recaps are off: port 14318 is used by another program.'},
+      46,
+      20,
+    ).map(stripAnsi);
+    expect(off.slice(2, 4)).toEqual(['Recaps are off: port 14318 is used by another', 'program.']);
+    expect(off.join('\n')).not.toMatch(/No recap yet/);
+    expect(recapOffText('other', 14318)).toBe('Recaps are off: port 14318 is used by another program.');
+    expect(recapOffText('whatnext', 15000)).toBe('Recaps are off: port 15000 is used by another whatnext.');
+    expect(recapOffText('free', 15000)).toBe('Recaps are off: could not open port 15000.');
   });
 
   it('折り返しは表示幅で数え、空白があればその後ろで折る', () => {
