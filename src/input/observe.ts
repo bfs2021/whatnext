@@ -4,6 +4,7 @@ import {type HookStore, type Supplied, supplement} from '../../lib/input/hooks.j
 import {readParents} from '../../lib/input/procs.js';
 import type {Transcripts} from '../../lib/input/transcript.js';
 import {type AgentRow, classify, dedupe, rowName, type Tier} from '../../lib/tier/classify.js';
+import type {RecapFacts, RecapHookStore} from './recap.js';
 import {CallerCache, deriveSpawners} from './spawners.js';
 
 // 1回の更新の観測(DESIGN.md「モジュールの境界」の入力)。取得の失敗は観測の一部として返す。
@@ -29,6 +30,8 @@ export type Observation =
       supplied: Map<string, Supplied>;
       /** 会話記録から分かった、セッションを作った時刻。 */
       created: Map<string, number>;
+      /** まとめ(`--recap` のときだけ。更新の時点の写し)。 */
+      recaps: Map<string, RecapFacts>;
     }
   | {ok: false; at: number; error: string};
 
@@ -41,6 +44,7 @@ export class Observer {
     private readonly hooks: HookStore,
     private readonly transcripts: Transcripts,
     private readonly now: () => number = Date.now,
+    private readonly recaps?: RecapHookStore,
   ) {
     this.callers = new CallerCache(run);
   }
@@ -86,6 +90,6 @@ export class Observer {
           if (c !== undefined) created.set(r.sid, c);
         }),
     );
-    return {ok: true, at, rows, spawner, supplied, created};
+    return {ok: true, at, rows, spawner, supplied, created, recaps: this.recaps?.snapshot() ?? new Map()};
   }
 }

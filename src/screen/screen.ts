@@ -1,5 +1,5 @@
 import {color, oneLine, padEnd, padStart, truncate, width} from '../../lib/text/text.js';
-import type {Screen, ScreenRow, Tone} from './types.js';
+import type {Screen, ScreenRow, Side, Tone} from './types.js';
 
 // 一覧の画面を組み立てる(PRODUCT.md「一覧の表示」「リポジトリの区切りと並び」)。外部に触れない純粋な関数。
 
@@ -63,9 +63,10 @@ export function annotationPrefix(r: Pick<ScreenRow, 'depth' | 'last' | 'ancestor
 
 const nameText = (r: ScreenRow) => (r.marker ? `${r.name} (${r.marker})` : r.name);
 
-/** 注記の文字列(一言、`⚙`、`↳ メモ` の順)。 */
-export function annotations(r: ScreenRow): {kind: 'line' | 'running' | 'note'; text: string}[] {
-  const out: {kind: 'line' | 'running' | 'note'; text: string}[] = [];
+/** 注記の文字列(`◎ 目的`、一言、`⚙`、`↳ メモ` の順)。 */
+export function annotations(r: ScreenRow): {kind: 'goal' | 'line' | 'running' | 'note'; text: string}[] {
+  const out: {kind: 'goal' | 'line' | 'running' | 'note'; text: string}[] = [];
+  if (r.goal) out.push({kind: 'goal', text: `◎ ${oneLine(r.goal)}`});
   if (r.line) out.push({kind: 'line', text: oneLine(r.line)});
   if (r.running && r.running.length > 0) out.push({kind: 'running', text: `⚙ ${r.running.map(oneLine).join(' · ')}`});
   if (r.note) out.push({kind: 'note', text: `↳ ${oneLine(r.note)}`});
@@ -155,6 +156,7 @@ export function clean(s: string): string {
 const cleanRow = (r: ScreenRow): ScreenRow => ({
   ...r,
   name: clean(r.name),
+  goal: r.goal === undefined ? undefined : clean(r.goal),
   line: r.line === undefined ? undefined : clean(r.line),
   running: r.running?.map(clean),
   note: r.note === undefined ? undefined : clean(r.note),
@@ -166,8 +168,100 @@ const cleanRow = (r: ScreenRow): ScreenRow => ({
   },
 });
 
-/** 画面の行の配列を組み立てる。どの行も端末の幅に収め、行数は端末の高さを超えない。 */
+/** 右の欄の幅。 */
+export const SIDE_WIDTH = 46;
+/** 右の欄を出す端末の幅の下限(一覧に 71 桁を残す)。足りなければ右の欄を出さない。 */
+export const SIDE_MIN_COLS = 120;
+const SIDE_GAP = ' │ ';
+/** 右の欄に並べるリンクの数。残りは数だけ出す。 */
+export const SIDE_LINKS = 5;
+const LABEL_W = 6;
+const NO_LINE_START = '。、，．）」』】〉》!?！？:;：；.,)]}';
+
+/** 表示幅 `w` で折り返す。空白があれば、その後ろで折る(日本語のように空白のない文は字の境で折る)。 */
+export function wrap(text: string, w: number): string[] {
+  const seg = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+  const out: string[] = [];
+  let line = '';
+  let lw = 0;
+  for (const {segment: g} of seg.segment(text)) {
+    const gw = width(g);
+    if (lw + gw > w && line !== '') {
+      const sp = line.lastIndexOf(' ');
+      if (g !== ' ' && sp > 0 && width(line.slice(sp + 1)) < w / 2) {
+        out.push(line.slice(0, sp));
+        line = line.slice(sp + 1);
+      } else if (NO_LINE_START.includes(g) && [...seg.segment(line)].length > 1) {
+        // 句読点と閉じ括弧を行の頭に置かない(前の1字と一緒に次の行へ送る)
+        const parts = [...seg.segment(line)].map(x => x.segment);
+        const last = parts.pop() ?? '';
+        out.push(parts.join(''));
+        line = last;
+      } else {
+        out.push(line);
+        line = '';
+      }
+      lw = width(line);
+      if (g === ' ' && line === '') continue;
+    }
+    line += g;
+    lw += gw;
+  }
+  if (line !== '' || out.length === 0) out.push(line);
+  return out.map(l => l.trimEnd());
+}
+
+/** 右の欄の行(題、まとめ、リンク)。`rows` を超える分は切り、最後の行を `…` にする。 */
+export function sideLines(side: Side, w: number, rows: number): string[] {
+  const out: string[] = [color.bold(truncate(clean(side.title), w)), ''];
+  const field = (label: string, value: string) => {
+    const v = wrap(clean(value) || '-', w - LABEL_W);
+    v.forEach((l, i) => {
+      out.push(`${i === 0 ? color.bold(padEnd(label, LABEL_W)) : ' '.repeat(LABEL_W)}${l}`);
+    });
+  };
+  if (side.recap) {
+    field('Goal', side.recap.goal);
+    field('Now', side.recap.now);
+    field('Next', side.recap.next);
+  } else {
+    for (const l of wrap('No recap yet. Recaps come from sessions started with n, when a turn ends.', w)) {
+      out.push(color.gray(l));
+    }
+  }
+  if (side.links.length > 0) {
+    out.push('', color.bold('Links'));
+    for (const l of side.links.slice(0, SIDE_LINKS)) out.push(`  ${truncate(clean(l), w - 2)}`);
+    if (side.links.length > SIDE_LINKS) out.push(color.gray(`  +${side.links.length - SIDE_LINKS} more`));
+  }
+  if (out.length > rows) {
+    const cut = out.slice(0, Math.max(0, rows - 1));
+    if (rows > 0) cut.push(color.gray('…'));
+    return cut;
+  }
+  return out;
+}
+
+/**
+ * 画面の行の配列を組み立てる。どの行も端末の幅に収め、行数は端末の高さを超えない。
+ * 右の欄があり、端末の幅が足りるときは、一覧を狭めて右に欄を並べる。最下部の欄(Usage、キーの説明)は全幅のまま。
+ */
 export function render(raw: Screen): string[] {
+  const side = raw.side;
+  if (!side || raw.width < SIDE_MIN_COLS || raw.message !== undefined) return renderList(raw);
+  const leftW = raw.width - SIDE_WIDTH - SIDE_GAP.length;
+  const left = renderList({...raw, width: leftW});
+  const footN = Math.min(left.length, (raw.usage ? 1 : 0) + 1);
+  const room = left.length - footN;
+  const sl = sideLines(side, SIDE_WIDTH, room);
+  const out = left.slice(0, room).map((l, i) => `${padEnd(l, leftW)}${color.gray(SIDE_GAP)}${sl[i] ?? ''}`);
+  const w = Math.max(1, raw.width);
+  if (raw.usage) out.push(clip(raw.usage, w));
+  out.push(clip(raw.keys ?? '', w));
+  return out.slice(0, left.length);
+}
+
+function renderList(raw: Screen): string[] {
   const s: Screen = {...raw, groups: raw.groups.map(g => ({...g, title: clean(g.title), rows: g.rows.map(cleanRow)}))};
   const w = Math.max(1, s.width);
   const h = Math.max(1, s.height);

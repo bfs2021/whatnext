@@ -10,6 +10,7 @@ import {statusLabel, type Tier} from '../../lib/tier/classify.js';
 import {focusTerminal, focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
 import type {Observation, ObsRow} from '../input/observe.js';
+import type {RecapFacts} from '../input/recap.js';
 import {locate} from '../input/where.js';
 import {followCursor, initialCursor, selectableOrder} from '../model/cursor.js';
 import {groupTitles, layout} from '../model/layout.js';
@@ -21,8 +22,8 @@ import type {Screen, ScreenRow} from '../screen/types.js';
 import {emptyState, type PersistedState} from '../state/state.js';
 import {filterItems} from './filter.js';
 import {ensureGuide} from './guide-session.js';
-import {ATTACH_KEYS, type AttachAction, GUIDE_CREATE, isAttachAction, LIST_KEYS_HELP} from './keys.js';
-import {GUIDE_OPTION, type GuideState, MAIN_TTY, NEWER, WB_TTY} from './names.js';
+import {ATTACH_KEYS, type AttachAction, GUIDE_CREATE, isAttachAction, LIST_KEYS_HELP, RECAP_KEYS_HELP} from './keys.js';
+import {GUIDE_OPTION, type GuideState, MAIN_TTY, NEWER, RECAP_WANTED, WB_TTY} from './names.js';
 import type {Ports} from './ports.js';
 
 // 一覧の状態の遷移と、外部に頼む作業(PRODUCT.md「操作」「作業台」「依存（待ち先と起動された行）」)。
@@ -56,6 +57,7 @@ type Mode =
   | {k: 'dir'; filter: string; sel: number; items: DirItem[]; waitFor?: string}
   | {k: 'other'; text: string; error?: string; waitFor?: string; items: DirItem[]}
   | {k: 'starting'; dir: string; since: number}
+  | {k: 'links'; sid: string; sel: number}
   | {k: 'output'; lines: string[]};
 
 interface Notice {
@@ -70,6 +72,10 @@ export class App {
   private rows = new Map<string, ObsRow>();
   private spawner = new Map<string, string>();
   private supplied = new Map<string, Supplied>();
+  /** まとめ(`--recap` のときだけ。最後の更新の時点の値)。 */
+  private recaps = new Map<string, RecapFacts>();
+  /** `--recap` で起動したのに、動いている一覧は `--recap` なしだった。 */
+  private recapWanted = false;
   private error?: string;
   /** 作ってからの時間(ミリ秒)。最後の更新の時点の値で、更新の間は変えない。 */
   private ageMs = new Map<string, number>();
@@ -264,6 +270,7 @@ export class App {
     this.rows = new Map(obs.rows.map(r => [r.sid, {...r, name: clean(r.name)}]));
     this.spawner = obs.spawner;
     this.supplied = obs.supplied;
+    this.recaps = obs.recaps;
     for (const r of obs.rows) {
       if (r.tier !== null && !this.persisted.seen.has(r.sid)) this.persisted.seen.set(r.sid, {first: obs.at});
     }
@@ -452,6 +459,7 @@ export class App {
       },
       ctx: this.supplied.get(sid)?.ctx,
       age: this.ageMs.get(sid),
+      goal: this.p.recap ? this.recaps.get(sid)?.recap?.goal || undefined : undefined,
       line: this.lineOf(r, tier === 'waiting' ? tierOf(r.tier) : tier),
       running: r.id ? this.running.get(r.id) : undefined,
       note: n.spawned ? undefined : this.persisted.notes.get(sid),
@@ -474,9 +482,15 @@ export class App {
         title: g.title,
         rows: g.nodes.filter(n => this.rows.has(n.sid)).map(n => this.screenRow(n.sid, g.root, n, titles)),
       })),
-      keys: this.mode.k === 'list' && this.confirms.length === 0 ? LIST_KEYS_HELP : '',
+      keys:
+        this.mode.k === 'list' && this.confirms.length === 0 ? (this.p.recap ? RECAP_KEYS_HELP : LIST_KEYS_HELP) : '',
       usage: this.usageText(),
     };
+    const cur = this.cursor ? this.rows.get(this.cursor) : undefined;
+    if (this.p.recap && cur) {
+      const f = this.recaps.get(cur.sid);
+      s.side = {title: cur.name, recap: f?.recap, links: (f?.links ?? []).map(l => l.label)};
+    }
     if (this.error) s.message = this.error;
     else if (this.lay.order.length === 0)
       s.message = this.initialized ? 'No sessions to show. Press n to start one.' : 'Loading...';
@@ -496,6 +510,9 @@ export class App {
     this.notices = this.notices.filter(n => n.until === undefined || n.until > now);
     for (const n of this.notices) notice.push(n.text);
     if (this.newer) notice.push(`whatnext ${this.p.version} is still running. Quit it to start ${this.newer}.`);
+    if (this.recapWanted && !this.p.recap) {
+      notice.push('whatnext is running without --recap. Quit it, then run "whatnext --recap" to see recaps.');
+    }
     if (notice.length > 0) s.notice = notice;
     return s;
   }
@@ -552,6 +569,17 @@ export class App {
       }
       case 'output':
         return [...m.lines, color.gray('Press any key to go back to the list.')];
+      case 'links': {
+        const name = this.rows.get(m.sid)?.name ?? '';
+        return menuLines({
+          title: `Links of ${name}:`,
+          items: this.linksOf(m.sid).map(l => ({label: l.label})),
+          selected: m.sel,
+          hint: 'Enter open · Esc close',
+          maxItems,
+          width: cols,
+        });
+      }
       default:
         return [];
     }
@@ -664,6 +692,18 @@ export class App {
       case 'output':
         this.mode = {k: 'list'};
         return;
+      case 'links': {
+        const links = this.linksOf(m.sid);
+        if (name === 'escape') this.mode = {k: 'list'};
+        else if (name === 'up') m.sel = Math.max(0, m.sel - 1);
+        else if (name === 'down') m.sel = Math.min(links.length - 1, m.sel + 1);
+        else if (name === 'return') {
+          const l = links[m.sel];
+          this.mode = {k: 'list'};
+          if (l) void this.openLink(l);
+        }
+        return;
+      }
       case 'note': {
         if (name === 'escape') this.mode = {k: 'list'};
         else if (name === 'return') this.commitNote(m.sid, m.text);
@@ -778,12 +818,34 @@ export class App {
       if (!busy) void this.enter(row);
       return;
     }
-    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 't' || str === 'v')) return;
+    if (busy && (str === 'e' || str === 'f' || str === 'w' || str === 't' || str === 'v' || str === 'o')) return;
     if (str === 'e') this.openNote(sid);
     else if (str === 'f') this.openWait(sid);
     else if (str === 'w') void this.createWorkbench(sid, {from: 'list', place: 'split'});
     else if (str === 't') void this.createWorkbench(sid, {from: 'list', place: 'tab'});
     else if (str === 'v') void this.openVsCode(sid, {from: 'list'});
+    else if (str === 'o' && this.p.recap) this.openLinks(sid);
+  }
+
+  // ---- まとめのリンク ----
+
+  private linksOf(sid: string): {label: string; href: string}[] {
+    return this.recaps.get(sid)?.links ?? [];
+  }
+
+  private openLinks(sid: string): void {
+    if (this.linksOf(sid).length === 0) {
+      this.notify(`No links for ${this.rows.get(sid)?.name ?? sid.slice(0, 8)}.`);
+      return;
+    }
+    this.mode = {k: 'links', sid, sel: 0};
+  }
+
+  private async openLink(l: {label: string; href: string}): Promise<void> {
+    const r = await this.p.run('open', [l.href], {timeout: 15000});
+    this.notify(
+      r.code === 0 ? `Opened ${clean(l.label)}.` : `open failed: ${clean(stripControl(r.stderr || r.stdout).trim())}`,
+    );
   }
 
   private isSpawned(sid: string): boolean {
@@ -916,6 +978,7 @@ export class App {
     try {
       const args = ['--bg'];
       if (this.p.settings) args.push('--settings', this.p.settings);
+      if (this.p.pluginDir) args.push('--plugin-dir', this.p.pluginDir);
       const r = await this.p.run('claude', args, {cwd: dir, timeout: 120_000});
       const out = stripControl(`${r.stdout}${r.stderr}`);
       if (/Workspace not trusted/i.test(out) && !retried) {
@@ -1052,16 +1115,18 @@ export class App {
 
   private async onSignal(): Promise<void> {
     const t = this.p.tmux;
-    const [reqs, clients, mainTty, wbTty, closed, newer] = await Promise.all([
+    const [reqs, clients, mainTty, wbTty, closed, newer, recapWanted] = await Promise.all([
       t.takeRequests(),
       t.clients(),
       t.option(MAIN_TTY),
       t.option(WB_TTY),
       t.option('@wn_closed'),
       t.option(NEWER),
+      t.option(RECAP_WANTED),
     ]);
     this.mainTty = mainTty;
     this.newer = newer || undefined;
+    this.recapWanted = recapWanted === '1';
     for (const c of clients) {
       if (c.tty !== mainTty && c.tty !== wbTty) {
         this.p.log(`detach ${c.tty} (${c.session})`);

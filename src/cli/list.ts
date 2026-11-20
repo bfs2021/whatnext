@@ -4,17 +4,18 @@ import {join} from 'node:path';
 import {emitKeypressEvents} from 'node:readline';
 import {fetchUsage} from '../../lib/input/claude.js';
 import {run} from '../../lib/input/exec.js';
-import {HookStore} from '../../lib/input/hooks.js';
 import {launchSettings, openReceiver, probe} from '../../lib/input/receiver.js';
 import {Transcripts} from '../../lib/input/transcript.js';
 import {LIST, serverConfig, Tmux} from '../../lib/tmux/tmux.js';
 import {Observer} from '../input/observe.js';
+import {RecapHookStore} from '../input/recap.js';
 import {Locations, Prs} from '../input/where.js';
 import {App} from '../ops/app.js';
 import {startGuide} from '../ops/guide-session.js';
 import {ATTACH_KEYS, ATTACH_KEYS_HELP} from '../ops/keys.js';
+import {RECAP_ON} from '../ops/names.js';
 import {StateFile, statePath} from '../state/state.js';
-import {type Env, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
+import {type Env, modDir, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
 
 // 一覧の役(専用の tmux サーバのセッション `list` の中で動く)。本物の口を差し込んで App を動かす。
 
@@ -38,14 +39,24 @@ export async function startList(env: Env): Promise<number> {
     ? join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
     : join(homedir(), '.claude.json');
 
-  const hooks = new HookStore();
+  const hooks = new RecapHookStore(env.recap);
   let settings: string | undefined;
+  let pluginDir: string | undefined;
   const occupant = await probe(env.port);
   if (occupant === 'free') {
     const rec = await openReceiver(env.port, hooks);
-    if (rec) settings = launchSettings(env.port);
+    if (rec) {
+      settings = launchSettings(env.port);
+      // まとめの mod は、受け口を開けたときだけ付ける(フックと同じ。DESIGN.md「まとめの mod」)
+      if (env.recap) {
+        settings = withRecapPort(settings, env.port);
+        pluginDir = modDir();
+      }
+    }
   }
-  log(`start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'}`);
+  log(
+    `start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'} recap=${env.recap}`,
+  );
 
   const r = await tmux.sourceConfig(
     serverConfig({
@@ -63,6 +74,8 @@ export async function startList(env: Env): Promise<number> {
   );
   if (r.code !== 0) log(`sourceConfig failed: ${r.stderr}`);
   await tmux.t(['set', '-w', '-t', `=${LIST}:`, 'remain-on-exit', 'off']);
+  if (env.recap) await tmux.setOption(RECAP_ON, '1');
+  else await tmux.unsetOption(RECAP_ON);
   const guideCommand = paneCommand(env, 'guide');
   await startGuide(tmux, guideCommand, homedir());
 
@@ -70,7 +83,7 @@ export async function startList(env: Env): Promise<number> {
   const app_ = new App({
     run: runT,
     tmux,
-    observer: new Observer(runT, hooks, transcripts),
+    observer: new Observer(runT, hooks, transcripts, Date.now, env.recap ? hooks : undefined),
     locations: new Locations(runT),
     prs: new Prs(runT),
     transcripts,
@@ -81,6 +94,8 @@ export async function startList(env: Env): Promise<number> {
     write: s => process.stdout.write(s),
     size: () => ({cols: process.stdout.columns || 80, rows: process.stdout.rows || 24}),
     settings,
+    pluginDir,
+    recap: env.recap,
     socket: env.socket,
     port: env.port,
     version: env.version,
@@ -120,4 +135,15 @@ export async function startList(env: Env): Promise<number> {
 
   await app_.start();
   return await new Promise<number>(() => {});
+}
+
+/** `--settings` の JSON の `env` に、mod が送る先のポートを足す。 */
+export function withRecapPort(settings: string, port: number): string {
+  try {
+    const j = JSON.parse(settings) as {env?: Record<string, string>};
+    j.env = {...(j.env ?? {}), WHATNEXT_RECAP_PORT: String(port)};
+    return JSON.stringify(j);
+  } catch {
+    return settings;
+  }
 }

@@ -8,7 +8,10 @@
     "whatnext": "dist/src/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "mod/.claude-plugin/plugin.json",
+    "mod/hooks",
+    "mod/types"
   ],
   "engines": {
     "node": ">=22"
@@ -24,6 +27,7 @@
     "prepack": "npm run build",
     "start": "node dist/src/cli.js",
     "test": "vitest run lib test/unit",
+    "test:mod": "claude plugin validate mod && claude plugin test mod",
     "check": "biome check .",
     "format": "biome check --write .",
     "test:e2e": "npm run build && vitest run --dir test/e2e --no-file-parallelism --testTimeout 60000",

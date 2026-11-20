@@ -21,6 +21,8 @@ export interface ScreenRow {
   ctx?: number;
   /** 作ってからの時間(ミリ秒)。 */
   age?: number;
+  /** まとめの目的(`◎ <目的>` の行。`--recap` のときだけ)。 */
+  goal?: string;
   /** 一言。 */
   line?: string;
   /** 作業台で動いているもの。 */
@@ -40,6 +42,14 @@ export interface ScreenGroup {
   rows: ScreenRow[];
 }
 
+/** 一覧の右の欄(カーソルの行のまとめとリンク。`--recap` のときだけ)。 */
+export interface Side {
+  /** カーソルの行のセッション名。 */
+  title: string;
+  recap?: {goal: string; now: string; next: string};
+  links: string[];
+}
+
 export interface Screen {
   width: number;
   height: number;
@@ -55,4 +65,5 @@ export interface Screen {
   notice?: string[];
   usage?: string;
   keys?: string;
+  side?: Side;
 }

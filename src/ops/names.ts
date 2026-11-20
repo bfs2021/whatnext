@@ -6,6 +6,10 @@ export const MAIN_TTY = '@wn_main_tty';
 export const WB_TTY = '@wn_wb_tty';
 /** 動いている一覧と違う版で起動したときの、起動した版。 */
 export const NEWER = '@wn_newer';
+/** 一覧が `--recap` で動いているか(`1`。一覧が置く)。 */
+export const RECAP_ON = '@wn_recap';
+/** `--recap` で起動したが、動いている一覧は `--recap` なしだった(`whatnext --recap` が置き、一覧が知らせる)。 */
+export const RECAP_WANTED = '@wn_recap_wanted';
 /** 作業台の画面の案内に出すもの(JSON の GuideState)。 */
 export const GUIDE_OPTION = '@wn_guide';
 

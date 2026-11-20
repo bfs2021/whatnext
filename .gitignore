@@ -2,3 +2,6 @@ node_modules/
 dist/
 .claude/worktrees/
 test/e2e/.tmp/
+# Claude Code が mod を読み込むと、書ける置き場所に型と tsconfig を書く
+mod/.claude-plugin/types/
+mod/tsconfig.json

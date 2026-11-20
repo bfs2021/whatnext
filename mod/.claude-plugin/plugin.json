@@ -1,0 +1,8 @@
+{
+  "name": "whatnext-recap",
+  "version": "0.1.0",
+  "description": "Recaps the session (goal, now, next) and the links said in it at each turn end, in a pane and for the whatnext list.",
+  "author": { "name": "masahirompp" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

@@ -25,6 +25,10 @@ export interface Ports {
   size: () => {cols: number; rows: number};
   /** `n` で起動するセッションの `--settings`(受け口を開けていなければ undefined)。 */
   settings?: string;
+  /** `n` で起動するセッションに `--plugin-dir` で付けるまとめの mod(`--recap` で受け口を開けたときだけ)。 */
+  pluginDir?: string;
+  /** `--recap` で動いているか。 */
+  recap: boolean;
   socket: string;
   port: number;
   version: string;
