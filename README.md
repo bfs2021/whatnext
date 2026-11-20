@@ -9,7 +9,7 @@ When you split work across sessions (an implementation and its review, a big tas
 ## Principles
 
 - **Reads session state from `claude agents --json` alone.** No screen scraping. To show what each session is doing and how long ago it was started, whatnext also reads hook events from sessions it started and, for other sessions, Claude Code's own conversation transcripts (`~/.claude/projects`) — read-only. Account usage comes from `claude`'s own `/usage`, which calls no model.
-- **Sessions whatnext starts send their context size (OpenTelemetry) and hook events to whatnext on 127.0.0.1:14318, only while whatnext is running.** Nothing leaves your machine and nothing is stored.
+- **Sessions whatnext starts send their context size (OpenTelemetry) and hook events to whatnext on 127.0.0.1:14318, only while whatnext is running.** Nothing leaves your machine and nothing is stored. With `--recap`, they also send their recaps there.
 - **Keeps almost no state.** Sessions keep running after you quit whatnext, and sessions started elsewhere show up too. Your settings are never modified. The only file whatnext writes is `~/.local/state/whatnext/state.json` (or under `$XDG_STATE_HOME`), which keeps your notes, wait-for links and the order of the list across restarts.
 - **Never answers for you.** No input injection or auto-approval — you attach and act yourself.
 
@@ -25,6 +25,16 @@ To see a session's workbench shell next to it, split your terminal (e.g. `cmd+d`
 npx @masahirompp/whatnext workbench
 ```
 
+### Recaps (opt-in)
+
+```sh
+npx @masahirompp/whatnext --recap
+```
+
+With `--recap`, the sessions you start with `n` get a small Claude Code mod (shipped in this package, loaded with `--plugin-dir`). At each turn end it makes one Haiku call to recap the session — its goal, where it stands now, and what comes next — and picks up the links said in the conversation (issues, PRs, commits). The list shows each row's goal as `◎ <goal>` above its one-liner and, when the terminal is at least 120 columns wide, the recap and links of the selected row on the right. Inside the session, the same recap shows in a `Recap` pane (`/wn-recap` opens it). `o` in the list opens one of the row's links.
+
+Recaps use your plan's usage (one Haiku call per turn of each such session), so they are off unless you pass `--recap`. They reach whatnext only from sessions it started, are kept in memory only, and need Claude Code's mod support (an early-access API that may change between releases). Without `--recap`, whatnext behaves as before.
+
 Keys in the list:
 
 | Key | Action |
@@ -38,6 +48,7 @@ Keys in the list:
 | `w` | Create the session's workbench shell (in Ghostty, also opens it in a split) |
 | `t` | Same as `w`, but in Ghostty opens it in a new tab |
 | `v` | Open the session's directory in VS Code |
+| `o` | Open one of the session's links (with `--recap` only) |
 | `r` | Refresh |
 | `q` | Quit (asks first if something is still running in a workbench) |
 
@@ -99,12 +110,13 @@ Design documents are written in Japanese.
 
 ## Development
 
-This project is rebuilt from scratch in cycles; only the docs above and `lib/` persist. See [CLAUDE.md](CLAUDE.md).
+This project is rebuilt from scratch in cycles; only the docs above, `lib/` and the recap mod (`mod/`) persist. See [CLAUDE.md](CLAUDE.md).
 
 ```sh
 npm run build      # tsc (strict)
 npm run check      # biome (format and lint)
 npm test           # unit tests (including lib/)
+npm run test:mod   # the recap mod's tests (claude plugin validate / claude plugin test)
 npm run test:e2e   # drives whatnext in a private tmux server with a fake claude
 npm run test:real  # uses the real claude (haiku) and Ghostty; creates and removes its own sessions
 ```
