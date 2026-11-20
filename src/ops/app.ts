@@ -57,7 +57,8 @@ type Mode =
   | {k: 'dir'; filter: string; sel: number; items: DirItem[]; waitFor?: string}
   | {k: 'other'; text: string; error?: string; waitFor?: string; items: DirItem[]}
   | {k: 'starting'; dir: string; since: number}
-  | {k: 'links'; sid: string; sel: number}
+  /** リンクは開いた時点の写し。開いている間に更新でまとめが替わっても、画面と Enter が同じものを指す。 */
+  | {k: 'links'; name: string; items: {label: string; href: string}[]; sel: number}
   | {k: 'output'; lines: string[]};
 
 interface Notice {
@@ -570,10 +571,9 @@ export class App {
       case 'output':
         return [...m.lines, color.gray('Press any key to go back to the list.')];
       case 'links': {
-        const name = this.rows.get(m.sid)?.name ?? '';
         return menuLines({
-          title: `Links of ${name}:`,
-          items: this.linksOf(m.sid).map(l => ({label: l.label})),
+          title: `Links of ${m.name}:`,
+          items: m.items.map(l => ({label: l.label})),
           selected: m.sel,
           hint: 'Enter open · Esc close',
           maxItems,
@@ -693,7 +693,7 @@ export class App {
         this.mode = {k: 'list'};
         return;
       case 'links': {
-        const links = this.linksOf(m.sid);
+        const links = m.items;
         if (name === 'escape') this.mode = {k: 'list'};
         else if (name === 'up') m.sel = Math.max(0, m.sel - 1);
         else if (name === 'down') m.sel = Math.min(links.length - 1, m.sel + 1);
@@ -834,11 +834,13 @@ export class App {
   }
 
   private openLinks(sid: string): void {
-    if (this.linksOf(sid).length === 0) {
-      this.notify(`No links for ${this.rows.get(sid)?.name ?? sid.slice(0, 8)}.`);
+    const name = this.rows.get(sid)?.name ?? sid.slice(0, 8);
+    const items = [...this.linksOf(sid)];
+    if (items.length === 0) {
+      this.notify(`No links for ${name}.`);
       return;
     }
-    this.mode = {k: 'links', sid, sel: 0};
+    this.mode = {k: 'links', name, items, sel: 0};
   }
 
   private async openLink(l: {label: string; href: string}): Promise<void> {

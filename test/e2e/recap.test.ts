@@ -201,6 +201,47 @@ describe('まとめ', () => {
     await h.waitFor(/No links for demo readme\./);
   });
 
+  describe('84: o のメニューを開いている間に更新でリンクが替わっても、Enter は画面で選んでいたリンクを開く', () => {
+    const L58: [string, string] = ['PR #58', 'https://github.com/acme/app/pull/58'];
+    const L412: [string, string] = ['acme/app#412', 'https://github.com/acme/app/issues/412'];
+    const L60: [string, string] = ['PR #60', 'https://github.com/acme/app/pull/60'];
+    const links = (ls: [string, string][]) => recap('fixlogin', {goal: 'g', now: 'n', next: 'x'}, ls);
+
+    async function openMenuOn412(): Promise<void> {
+      const app = h.repo('app');
+      h.agents([bg('fixlogin', {name: 'fix-login', cwd: app}), bg('other', {name: 'other', cwd: app})]);
+      await h.start({args: '--recap', size: {cols: 150, rows: 30}});
+      await post(h.port, links([L58, L412]));
+      await h.refresh();
+      await h.select('fix-login');
+      // 更新の直後に開く(次の更新は 60 秒後)
+      await h.refresh();
+      await h.keys('o', 'Down');
+      await h.waitFor(/^> acme\/app#412/m);
+    }
+
+    it('新しいまとめが届いたとき', async () => {
+      h = new Harness();
+      await openMenuOn412();
+      await post(h.port, links([L60, L58, L412]));
+      await sleep(65000); // 60 秒ごとの更新を待つ
+      expect(h.screen()).toMatch(/^> acme\/app#412/m);
+      await h.keys('Enter');
+      await h.waitFor(/Opened acme\/app#412\./);
+      expect(h.file('open.log').trim()).toBe(L412[1]);
+    }, 120000);
+
+    it('セッションが消えたとき', async () => {
+      h = new Harness();
+      await openMenuOn412();
+      h.remove(sid('fixlogin').slice(0, 8));
+      await sleep(65000);
+      await h.keys('Enter');
+      await h.waitFor(/Opened acme\/app#412\./);
+      expect(h.file('open.log').trim()).toBe(L412[1]);
+    }, 120000);
+  });
+
   it('85: 消えたセッションのまとめは捨てる。制御文字は落とす', async () => {
     h = new Harness();
     const app = h.repo('app');
