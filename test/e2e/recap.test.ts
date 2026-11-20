@@ -1,7 +1,7 @@
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
-import {bg, CLI, Harness, REPO, sid, sleep, tty} from './harness.js';
+import {bg, CLI, escapeRe, Harness, REPO, sid, sleep, tty} from './harness.js';
 
 // まとめ(PRODUCT.md「まとめ」)。mod の代わりに、テストが受け口へまとめの本文を送る。
 // WN_CAPTURE=<ディレクトリ> を付けて流すと、取った画面をそこに書く(見た目の決定に使う)。
@@ -256,6 +256,28 @@ describe('まとめ', () => {
     h.agents(rows(app, demo));
     s = await h.refresh();
     expect(s).not.toMatch(/◎ evil/);
+  });
+
+  it('81: 右の欄のリンクは、埋め込みのリンク(OSC 8)で端末に届く', async () => {
+    // 外側の tmux が端末の代わり。中の tmux は、外側が tmux だと問い合わせの応答で知り、hyperlinks を付ける
+    h = new Harness();
+    const app = h.repo('app');
+    const demo = h.repo('demo');
+    h.agents(rows(app, demo));
+    await h.start({args: '--recap', size: {cols: 150, rows: 30}, env: {TERM: 'xterm-256color'}});
+    await sendAll(h.port);
+    await h.refresh();
+    await h.select('fix-login');
+    await h.waitFor(/│ {3}PR #58/);
+    const s = h.screenWithEscapes();
+    capture('recap-links-osc8', s);
+    // tmux は外側の端末に送るとき、リンクに id を足す(`8;id=tmux1;<URL>`)
+    const osc8 = (href: string) => new RegExp(`\x1b\\]8;[^;\x1b]*;${escapeRe(href)}\x1b\\\\(.*?)\x1b\\]8;;\x1b\\\\`);
+    expect(s).toMatch(osc8('https://github.com/acme/app/pull/58'));
+    expect(osc8('https://github.com/acme/app/pull/58').exec(s)?.[1]).toBe('PR #58');
+    expect(osc8('https://github.com/acme/app/issues/412').exec(s)?.[1]).toBe('acme/app#412');
+    // 見た目は今までと同じ(リンクの列は幅を取らない)
+    expect(h.screen()).toMatch(/│ Links\n.*│ {3}PR #58\n.*│ {3}acme\/app#412/);
   });
 
   it('86: --recap なしで動いている一覧に whatnext --recap でつなぐと、そのことが示される', async () => {

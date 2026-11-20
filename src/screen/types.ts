@@ -47,7 +47,8 @@ export interface Side {
   /** カーソルの行のセッション名。 */
   title: string;
   recap?: {goal: string; now: string; next: string};
-  links: string[];
+  /** リンク(新しいもの順)。`href` は受け口が検査した http(s) の URL で、埋め込みのリンク(OSC 8)にする。 */
+  links: {label: string; href: string}[];
 }
 
 export interface Screen {

@@ -216,6 +216,19 @@ export function wrap(text: string, w: number): string[] {
   return out.map(l => l.trimEnd());
 }
 
+/** 埋め込みのリンク(OSC 8)にしてよい URL。制御文字と空白を含まない http(s) のもの。 */
+const LINKABLE = /^https?:\/\/[!-~\u00a0-\u{10ffff}]+$/u;
+
+/**
+ * `text` を、`href` を開く埋め込みのリンク(OSC 8)で囲む。`href` が http(s) の URL でなければ、そのまま返す。
+ * 幅は数え終えた文字列に付ける(付けたあとに幅を数えたり切ったりしない)。外側の端末に送るかは tmux が決める
+ * (サーバの `terminal-features` の `hyperlinks`。DESIGN.md「一覧と作業台の仕組み」)。
+ */
+export function hyperlink(href: string, text: string): string {
+  if (!LINKABLE.test(href)) return text;
+  return `\x1b]8;;${href}\x1b\\${text}\x1b]8;;\x1b\\`;
+}
+
 /** 右の欄の行(題、まとめ、リンク)。`rows` を超える分は切り、最後の行を `…` にする。 */
 export function sideLines(side: Side, w: number, rows: number): string[] {
   const out: string[] = [color.bold(truncate(clean(side.title), w)), ''];
@@ -236,7 +249,8 @@ export function sideLines(side: Side, w: number, rows: number): string[] {
   }
   if (side.links.length > 0) {
     out.push('', color.bold('Links'));
-    for (const l of side.links.slice(0, SIDE_LINKS)) out.push(`  ${truncate(clean(l), w - 2)}`);
+    for (const l of side.links.slice(0, SIDE_LINKS))
+      out.push(`  ${hyperlink(l.href, truncate(clean(l.label), w - 2))}`);
     if (side.links.length > SIDE_LINKS) out.push(color.gray(`  +${side.links.length - SIDE_LINKS} more`));
   }
   if (out.length > rows) {

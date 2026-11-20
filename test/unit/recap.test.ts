@@ -3,7 +3,7 @@ import {stripAnsi, width} from '../../lib/text/text.js';
 import {parseArgs} from '../../src/cli/args.js';
 import {withRecapPort} from '../../src/cli/list.js';
 import {parseRecapBody, RecapHookStore, sanitize} from '../../src/input/recap.js';
-import {render, SIDE_MIN_COLS, sideLines, wrap} from '../../src/screen/screen.js';
+import {hyperlink, render, SIDE_MIN_COLS, sideLines, wrap} from '../../src/screen/screen.js';
 import type {Screen, ScreenRow} from '../../src/screen/types.js';
 
 const body = (over: Record<string, unknown> = {}) => ({
@@ -97,7 +97,12 @@ const row = (sid: string, over: Partial<ScreenRow> = {}): ScreenRow => ({
   ...over,
 });
 
-const plain = (s: Screen) => render(s).map(l => stripAnsi(l).trimEnd());
+/** 埋め込みのリンク(OSC 8)の列。lib の stripAnsi は除かない。 */
+const ESC = String.fromCharCode(0x1b);
+const OSC8 = new RegExp(`${ESC}\\]8;;[^${ESC}]*${ESC}\\\\`, 'g');
+const unlink = (s: string) => s.replace(OSC8, '');
+const plain = (s: Screen) => render(s).map(l => stripAnsi(unlink(l)).trimEnd());
+const link = (label: string, href = `https://example.com/${label}`) => ({label, href});
 
 const screen = (w: number, over: Partial<Screen> = {}): Screen => ({
   width: w,
@@ -135,7 +140,11 @@ const screen = (w: number, over: Partial<Screen> = {}): Screen => ({
       now: '送信ボタンを押下中は無効にし、テストを2件足した。PR #58 を作った。',
       next: 'レビューの指摘を待つ',
     },
-    links: ['PR #58', 'acme/app#412', 'acme/app@3f2a91c'],
+    links: [
+      link('PR #58', 'https://github.com/acme/app/pull/58'),
+      link('acme/app#412', 'https://github.com/acme/app/issues/412'),
+      link('acme/app@3f2a91c', 'https://github.com/acme/app/commit/3f2a91c'),
+    ],
   },
   ...over,
 });
@@ -170,16 +179,41 @@ describe('まとめの画面', () => {
     const none = sideLines({title: 'demo', links: []}, 46, 20).map(stripAnsi);
     expect(none[2]).toMatch(/^No recap yet\./);
     const many = sideLines(
-      {title: 't', recap: {goal: 'g', now: 'n', next: 'x'}, links: ['1', '2', '3', '4', '5', '6', '7']},
+      {
+        title: 't',
+        recap: {goal: 'g', now: 'n', next: 'x'},
+        links: ['1', '2', '3', '4', '5', '6', '7'].map(x => link(x)),
+      },
       46,
       30,
-    ).map(stripAnsi);
+    ).map(l => stripAnsi(unlink(l)));
     expect(many).toContain('  5');
     expect(many).toContain('  +2 more');
-    const cut = sideLines({title: 't', recap: {goal: 'g', now: 'n', next: 'x'}, links: ['1', '2']}, 46, 4).map(
-      stripAnsi,
-    );
+    const cut = sideLines(
+      {title: 't', recap: {goal: 'g', now: 'n', next: 'x'}, links: [link('1'), link('2')]},
+      46,
+      4,
+    ).map(stripAnsi);
     expect(cut).toEqual(['t', '', 'Goal  g', '…']);
+  });
+
+  it('右の欄のリンクは、埋め込みのリンク(OSC 8)で描き、幅には名前だけを数える', () => {
+    const raw = render(screen(150));
+    const pr = raw.find(l => l.includes('PR #58') && l.includes('\x1b]8;;'));
+    expect(pr).toContain('\x1b]8;;https://github.com/acme/app/pull/58\x1b\\PR #58\x1b]8;;\x1b\\');
+    for (const l of raw) expect(width(l)).toBeLessThanOrEqual(150);
+    // 名前が長くて切るときも、切るのは名前だけで、リンクの先は全部残す
+    const long = sideLines({title: 't', links: [link('x'.repeat(80), 'https://example.com/long')]}, 46, 20);
+    const l = long.find(x => x.includes('\x1b]8;;')) ?? '';
+    expect(l).toContain('\x1b]8;;https://example.com/long\x1b\\');
+    expect(width(l)).toBe(46);
+    // http(s) でない先や制御文字を含む先は、リンクにしない
+    expect(hyperlink('javascript:alert(1)', 'x')).toBe('x');
+    expect(hyperlink('https://a.example/\x07\x1b]8;;evil', 'x')).toBe('x');
+    expect(hyperlink('https://a.example/ b', 'x')).toBe('x');
+    expect(hyperlink('https://ja.wikipedia.org/wiki/東京', '東京')).toBe(
+      '\x1b]8;;https://ja.wikipedia.org/wiki/東京\x1b\\東京\x1b]8;;\x1b\\',
+    );
   });
 
   it('折り返しは表示幅で数え、空白があればその後ろで折る', () => {
