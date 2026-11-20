@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
 import {bg, CLI, escapeRe, Harness, REPO, sid, sleep, tty} from './harness.js';
 
-// まとめ(PRODUCT.md「まとめ」)。mod の代わりに、テストが受け口へまとめの本文を送る。
+// ダイジェスト(PRODUCT.md「ダイジェスト」)。mod の代わりに、テストが受け口へダイジェストの本文を送る。
 // WN_CAPTURE=<ディレクトリ> を付けて流すと、取った画面をそこに書く(見た目の決定に使う)。
 
 let h: Harness;
@@ -25,10 +25,14 @@ async function post(port: number, body: object): Promise<void> {
   });
 }
 
-const recap = (id: string, r: {goal: string; now: string; next: string} | null, links: [string, string][] = []) => ({
-  hook_event_name: 'WhatnextRecap',
+const digest = (
+  id: string,
+  r: {goal: string; progress: string; next: string} | null,
+  links: [string, string][] = [],
+) => ({
+  hook_event_name: 'WhatnextDigest',
   session_id: sid(id),
-  recap: r,
+  digest: r,
   links: links.map(([label, href]) => ({label, href})),
 });
 
@@ -44,11 +48,11 @@ function rows(app: string, demo: string) {
 async function sendAll(port: number): Promise<void> {
   await post(
     port,
-    recap(
+    digest(
       'fixlogin',
       {
         goal: 'ログイン画面の二重送信を直す',
-        now: '送信ボタンを押下中は無効にし、テストを2件足した。PR #58 を作った。',
+        progress: '送信ボタンを押下中は無効にし、テストを2件足した。PR #58 を作った。',
         next: 'レビューの指摘を待つ',
       },
       [
@@ -60,17 +64,20 @@ async function sendAll(port: number): Promise<void> {
   );
   await post(
     port,
-    recap(
+    digest(
       'refactor',
       {
         goal: '認証ミドルウェアをセッション方式からトークン方式へ移す',
-        now: 'ルートの半分を移し終えた。残りは admin 配下。',
+        progress: 'ルートの半分を移し終えた。残りは admin 配下。',
         next: 'admin 配下のルートを移す',
       },
       [['acme/infra#77', 'https://github.com/acme/infra/issues/77']],
     ),
   );
-  await post(port, recap('demoread', {goal: 'README.mdの末尾に「hello」の行を追加する', now: '行を足した', next: ''}));
+  await post(
+    port,
+    digest('demoread', {goal: 'README.mdの末尾に「hello」の行を追加する', progress: '行を足した', next: ''}),
+  );
 }
 
 const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
@@ -95,57 +102,57 @@ function talk(x: Harness): void {
   said('demoread', 'README に hello の行を足して', 'README.md に hello の行を足しました。', 3);
 }
 
-describe('まとめ', () => {
-  it('80・81: --recap で起動すると、届いたまとめの目的が各行の一言の上に、カーソルの行のまとめとリンクが右の欄に出る', async () => {
+describe('ダイジェスト', () => {
+  it('80・81: --digest で起動すると、届いたダイジェストの Goal が各行の一言の上に、カーソルの行のダイジェストと会話リンクが右の欄に出る', async () => {
     h = new Harness();
     const app = h.repo('app');
     const demo = h.repo('demo');
     h.agents(rows(app, demo));
     talk(h);
-    await h.start({args: '--recap', size: {cols: 150, rows: 30}});
+    await h.start({args: '--digest', size: {cols: 150, rows: 30}});
     await sendAll(h.port);
     let s = await h.refresh();
     s = await h.waitFor(/◎ README/);
-    capture('recap-150-cursor-first', s);
+    capture('digest-150-cursor-first', s);
     const lines = s.split('\n');
     const goal = lines.findIndex(l => l.includes('◎ ログイン画面の二重送信を直す'));
     expect(lines[goal - 1]).toMatch(/fix-login/);
     expect(lines[goal + 1]).toMatch(/送信中はボタンを無効にして/);
     expect(s).toMatch(/◎ 認証ミドルウェアをセッション方式からトークン方式へ移す/);
-    expect(s).toMatch(/│ Goal {2}ログイン画面の二重送信を直す/);
-    expect(s).toMatch(/│ Now {3}送信ボタンを押下中は無効にし/);
-    expect(s).toMatch(/│ Next {2}レビューの指摘を待つ/);
+    expect(s).toMatch(/│ Goal {6}ログイン画面の二重送信を直す/);
+    expect(s).toMatch(/│ Progress {2}送信ボタンを押下中は無効にし/);
+    expect(s).toMatch(/│ Next {6}レビューの指摘を待つ/);
     expect(s).toMatch(/│ Links\n.*│ {3}PR #58\n.*│ {3}acme\/app#412/);
     expect(s).toMatch(/o links/);
     // カーソルを動かすと、右の欄がその行に替わる
     await h.select('refactor the auth middleware');
     s = await h.waitFor(/│ refactor the auth middleware/);
-    capture('recap-150-cursor-second', s);
-    expect(s).toMatch(/│ Goal {2}認証ミドルウェアを/);
+    capture('digest-150-cursor-second', s);
+    expect(s).toMatch(/│ Goal {6}認証ミドルウェアを/);
     expect(s).toMatch(/│ {5}acme\/infra#77|│ {3}acme\/infra#77/);
-    // まとめのない行((tty) の行)
+    // ダイジェストのない行((tty) の行)
     await h.select('scratch');
     s = await h.waitFor(/│ scratch/);
-    capture('recap-150-no-recap', s);
-    expect(s).toMatch(/│ No recap yet\./);
+    capture('digest-150-no-digest', s);
+    expect(s).toMatch(/│ No digest yet\./);
   });
 
-  it('81: 端末が狭いと右の欄は出ず、目的の行だけが出る', async () => {
+  it('81: 端末が狭いと右の欄は出ず、Goal の行だけが出る', async () => {
     h = new Harness();
     const app = h.repo('app');
     const demo = h.repo('demo');
     h.agents(rows(app, demo));
     talk(h);
-    await h.start({args: '--recap', size: {cols: 110, rows: 30}});
+    await h.start({args: '--digest', size: {cols: 110, rows: 30}});
     await sendAll(h.port);
     await h.refresh();
     const s = await h.waitFor(/◎ README/);
-    capture('recap-110', s);
+    capture('digest-110', s);
     expect(s).not.toMatch(/│ Goal/);
     expect(s).toMatch(/◎ ログイン画面の二重送信を直す/);
   });
 
-  it('82: --recap なしでは、まとめが届いても今までどおり', async () => {
+  it('82: --digest なしでは、ダイジェストが届いても今までどおり', async () => {
     h = new Harness();
     const app = h.repo('app');
     const demo = h.repo('demo');
@@ -157,10 +164,10 @@ describe('まとめ', () => {
     expect(s).not.toMatch(/◎|│ Goal|o links/);
   });
 
-  it('83: n で起動するセッションに --recap のときだけ mod が付く', async () => {
+  it('83: n で起動するセッションに --digest のときだけ mod が付く', async () => {
     h = new Harness();
     const app = h.repo('app');
-    await h.start({cwd: app, args: '--recap'});
+    await h.start({cwd: app, args: '--digest'});
     await h.keys('n', 'Enter');
     await h.waitFor(/fake claude attached/, 10000);
     const call = h.calls().find(c => c.args[0] === '--bg');
@@ -168,16 +175,16 @@ describe('まとめ', () => {
     expect(i).toBeGreaterThan(0);
     expect(call?.args[i + 1]).toBe(join(REPO, 'mod'));
     const settings = JSON.parse(call?.args[(call?.args.indexOf('--settings') ?? 0) + 1] ?? '{}');
-    expect(settings.env.WHATNEXT_RECAP_PORT).toBe(String(h.port));
-    // mod が「まとめを受けているか」を確かめる口: 専用サーバの @wn_recap_port に受け口のポートを置く
-    expect(settings.env.WHATNEXT_RECAP_TMUX).toMatch(/\/tmux$/);
-    expect(settings.env.WHATNEXT_RECAP_SOCKET).toMatch(new RegExp(`/${escapeRe(h.socket)}$`));
-    expect(h.inner('-S', settings.env.WHATNEXT_RECAP_SOCKET, 'show-options', '-sqv', '@wn_recap_port').trim()).toBe(
+    expect(settings.env.WHATNEXT_DIGEST_PORT).toBe(String(h.port));
+    // mod が「ダイジェストを受けているか」を確かめる口: 専用サーバの @wn_digest_port に受け口のポートを置く
+    expect(settings.env.WHATNEXT_DIGEST_TMUX).toMatch(/\/tmux$/);
+    expect(settings.env.WHATNEXT_DIGEST_SOCKET).toMatch(new RegExp(`/${escapeRe(h.socket)}$`));
+    expect(h.inner('-S', settings.env.WHATNEXT_DIGEST_SOCKET, 'show-options', '-sqv', '@wn_digest_port').trim()).toBe(
       String(h.port),
     );
   });
 
-  it('83: --recap なしの n には mod が付かない', async () => {
+  it('83: --digest なしの n には mod が付かない', async () => {
     h = new Harness();
     const app = h.repo('app');
     await h.start({cwd: app});
@@ -185,8 +192,8 @@ describe('まとめ', () => {
     await h.waitFor(/fake claude attached/, 10000);
     const call = h.calls().find(c => c.args[0] === '--bg');
     expect(call?.args).not.toContain('--plugin-dir');
-    // まとめを受けていないので、mod が確かめる口も置かない
-    expect(h.inner('show-options', '-sqv', '@wn_recap_port').trim()).toBe('');
+    // ダイジェストを受けていないので、mod が確かめる口も置かない
+    expect(h.inner('show-options', '-sqv', '@wn_digest_port').trim()).toBe('');
   });
 
   it('84: o でカーソルの行のリンクを選んで開く。リンクのない行では、ないことを示す', async () => {
@@ -194,13 +201,13 @@ describe('まとめ', () => {
     const app = h.repo('app');
     const demo = h.repo('demo');
     h.agents(rows(app, demo));
-    await h.start({args: '--recap', size: {cols: 150, rows: 30}});
+    await h.start({args: '--digest', size: {cols: 150, rows: 30}});
     await sendAll(h.port);
     await h.refresh();
     await h.select('fix-login');
     await h.keys('o');
     const s = await h.waitFor(/Links of fix-login:/);
-    capture('recap-links-menu', s);
+    capture('digest-links-menu', s);
     expect(s).toMatch(/^> PR #58 +│\n {2}acme\/app#412 +│$/m);
     await h.keys('Down', 'Enter');
     await h.waitFor(/Opened acme\/app#412\./);
@@ -214,12 +221,12 @@ describe('まとめ', () => {
     const L58: [string, string] = ['PR #58', 'https://github.com/acme/app/pull/58'];
     const L412: [string, string] = ['acme/app#412', 'https://github.com/acme/app/issues/412'];
     const L60: [string, string] = ['PR #60', 'https://github.com/acme/app/pull/60'];
-    const links = (ls: [string, string][]) => recap('fixlogin', {goal: 'g', now: 'n', next: 'x'}, ls);
+    const links = (ls: [string, string][]) => digest('fixlogin', {goal: 'g', progress: 'n', next: 'x'}, ls);
 
     async function openMenuOn412(): Promise<void> {
       const app = h.repo('app');
       h.agents([bg('fixlogin', {name: 'fix-login', cwd: app}), bg('other', {name: 'other', cwd: app})]);
-      await h.start({args: '--recap', size: {cols: 150, rows: 30}});
+      await h.start({args: '--digest', size: {cols: 150, rows: 30}});
       await post(h.port, links([L58, L412]));
       await h.refresh();
       await h.select('fix-login');
@@ -229,7 +236,7 @@ describe('まとめ', () => {
       await h.waitFor(/^> acme\/app#412/m);
     }
 
-    it('新しいまとめが届いたとき', async () => {
+    it('新しいダイジェストが届いたとき', async () => {
       h = new Harness();
       await openMenuOn412();
       await post(h.port, links([L60, L58, L412]));
@@ -251,13 +258,13 @@ describe('まとめ', () => {
     }, 120000);
   });
 
-  it('85: 消えたセッションのまとめは捨てる。制御文字は落とす', async () => {
+  it('85: 消えたセッションのダイジェストは捨てる。制御文字は落とす', async () => {
     h = new Harness();
     const app = h.repo('app');
     const demo = h.repo('demo');
     h.agents(rows(app, demo));
-    await h.start({args: '--recap', size: {cols: 150, rows: 30}});
-    await post(h.port, recap('fixlogin', {goal: 'evil\x1b[2Jgoal\nx', now: 'n', next: 'x'}));
+    await h.start({args: '--digest', size: {cols: 150, rows: 30}});
+    await post(h.port, digest('fixlogin', {goal: 'evil\x1b[2Jgoal\nx', progress: 'n', next: 'x'}));
     let s = await h.refresh();
     expect(s).toMatch(/◎ evil\[2Jgoal x/);
     h.remove(sid('fixlogin').slice(0, 8));
@@ -273,13 +280,13 @@ describe('まとめ', () => {
     const app = h.repo('app');
     const demo = h.repo('demo');
     h.agents(rows(app, demo));
-    await h.start({args: '--recap', size: {cols: 150, rows: 30}, env: {TERM: 'xterm-256color'}});
+    await h.start({args: '--digest', size: {cols: 150, rows: 30}, env: {TERM: 'xterm-256color'}});
     await sendAll(h.port);
     await h.refresh();
     await h.select('fix-login');
     await h.waitFor(/│ {3}PR #58/);
     const s = h.screenWithEscapes();
-    capture('recap-links-osc8', s);
+    capture('digest-links-osc8', s);
     // tmux は外側の端末に送るとき、リンクに id を足す(`8;id=tmux1;<URL>`)
     const osc8 = (href: string) => new RegExp(`\x1b\\]8;[^;\x1b]*;${escapeRe(href)}\x1b\\\\(.*?)\x1b\\]8;;\x1b\\\\`);
     expect(s).toMatch(osc8('https://github.com/acme/app/pull/58'));
@@ -296,7 +303,7 @@ describe('まとめ', () => {
       py = undefined;
     });
 
-    it('--recap では mod を付けず、右の欄に、まとめが届かない理由を出す', async () => {
+    it('--digest では mod を付けず、右の欄に、ダイジェストが届かない理由を出す', async () => {
       h = new Harness();
       h.port = 15000 + Math.floor(Math.random() * 900);
       py = spawn('python3', ['-m', 'http.server', String(h.port), '--bind', '127.0.0.1'], {
@@ -306,32 +313,32 @@ describe('まとめ', () => {
       await sleep(1500);
       const app = h.repo('app');
       h.agents([bg('alpha', {name: 'alpha', cwd: app})]);
-      await h.start({cwd: app, args: '--recap', size: {cols: 150, rows: 30}});
+      await h.start({cwd: app, args: '--digest', size: {cols: 150, rows: 30}});
       await h.keys('n', 'Enter');
       await h.waitFor(/fake claude attached/, 10000);
       const call = h.calls().find(c => c.args[0] === '--bg');
-      expect(h.log()).toMatch(/occupant=other receiver=none recap=true/);
+      expect(h.log()).toMatch(/occupant=other receiver=none digest=true/);
       expect(call?.args).not.toContain('--plugin-dir');
-      expect(h.inner('show-options', '-sqv', '@wn_recap_port').trim()).toBe('');
+      expect(h.inner('show-options', '-sqv', '@wn_digest_port').trim()).toBe('');
       await h.keys('C-q', 'C-l');
       await h.select('alpha');
       const s = await h.waitFor(/│ alpha/);
-      capture('recap-port-used', s);
-      expect(s).not.toMatch(/Recaps come from sessions/);
-      expect(s).toMatch(new RegExp(`│ Recaps are off: port ${h.port} is used by another\\s*\\n.*│ program\\.`));
+      capture('digest-port-used', s);
+      expect(s).not.toMatch(/Digests come from sessions/);
+      expect(s).toMatch(new RegExp(`│ Digests are off: port ${h.port} is used by another\\s*\\n.*│ program\\.`));
       // ◎ の行と右の欄はそのまま(o links もキーの説明に残る)
       expect(s).toMatch(/o links/);
     });
   });
 
-  it('86: --recap なしで動いている一覧に whatnext --recap でつなぐと、そのことが示される', async () => {
+  it('86: --digest なしで動いている一覧に whatnext --digest でつなぐと、そのことが示される', async () => {
     h = new Harness();
     h.agents([bg('a', {name: 'alpha'})]);
     await h.start();
-    h.open('second', `${h.envLine()} node ${CLI} --recap`);
+    h.open('second', `${h.envLine()} node ${CLI} --digest`);
     await sleep(1500);
     const s = await h.waitFor(
-      /whatnext is running without --recap\. Quit it, then run "whatnext --recap" to see recaps\./,
+      /whatnext is running without --digest\. Quit it, then run "whatnext --digest" to see digests\./,
       8000,
       'second',
     );
@@ -350,7 +357,7 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
       bg('a', {name: WIDE_NAME, cwd: app, state: 'stopped', pid: undefined, status: undefined}),
       bg('b', {name: 'fix-login', cwd: app}),
     ]);
-    await h.start({args: '--recap', size: WIDE});
+    await h.start({args: '--digest', size: WIDE});
     await h.select(WIDE_NAME);
     await h.keys('w');
     await sleep(800);
@@ -364,7 +371,7 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
     await h.waitFor(/Press Ctrl\+X again within 2s to delete\./);
     await h.keys('C-x');
     const s = await h.waitFor(/Delete refactor the auth middleware and stop/);
-    capture('recap-wide-confirm', s);
+    capture('digest-wide-confirm', s);
     expect(s).toMatch(/Delete refactor the auth middleware and stop .*\[y\/N\]/);
     await h.keys('n');
   });
@@ -373,11 +380,11 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
     h = new Harness();
     const app = h.repo('app');
     h.agents([tty('t', {name: WIDE_NAME, cwd: app}), bg('b', {name: 'fix-login', cwd: app})]);
-    await h.start({args: '--recap', size: WIDE});
+    await h.start({args: '--digest', size: WIDE});
     await h.select(WIDE_NAME);
     await h.keys('t');
     const s = await h.waitFor(/is an interactive session/);
-    capture('recap-wide-notice', s);
+    capture('digest-wide-notice', s);
     expect(s).toContain(`${WIDE_NAME} is an interactive session. It has no workbench.`);
   });
 
@@ -385,7 +392,7 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
     h = new Harness();
     const app = h.repo('app');
     h.agents([bg('b', {name: 'fix-login', cwd: app})]);
-    await h.start({args: '--recap', size: WIDE, cwd: app});
+    await h.start({args: '--digest', size: WIDE, cwd: app});
     await h.keys('n');
     await h.waitFor(/New session in:/);
     await h.type('zzzz');
@@ -394,7 +401,7 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
     const path = '~/ghq/github.com/example-org/some-long-repository-name/packages/backend-api';
     await h.type(path);
     const s = await h.waitFor(/Directory: /);
-    capture('recap-wide-input', s);
+    capture('digest-wide-input', s);
     expect(s).toContain(`Directory: zzzz${path}█`);
   });
 
@@ -402,14 +409,14 @@ describe('81: 右の欄を出していても、一覧の下の確認の問い・
     h = new Harness();
     const app = h.repo('app');
     h.agents([bg('a', {name: WIDE_NAME, cwd: app}), bg('b', {name: 'fix-login', cwd: app})]);
-    await h.start({args: '--recap', size: WIDE});
+    await h.start({args: '--digest', size: WIDE});
     await h.select(WIDE_NAME);
     await h.keys('e');
     await h.waitFor(/Note for /);
     const note = 'wait for the review of PR #58 before merging';
     await h.type(note);
     const s = await h.waitFor(/Note for /);
-    capture('recap-wide-note', s);
+    capture('digest-wide-note', s);
     expect(s).toContain(`Note for ${WIDE_NAME}: ${note}█`);
   });
 });

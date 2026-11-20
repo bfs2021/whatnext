@@ -63,7 +63,7 @@ export function annotationPrefix(r: Pick<ScreenRow, 'depth' | 'last' | 'ancestor
 
 const nameText = (r: ScreenRow) => (r.marker ? `${r.name} (${r.marker})` : r.name);
 
-/** 注記の文字列(`◎ 目的`、一言、`⚙`、`↳ メモ` の順)。 */
+/** 注記の文字列(`◎ Goal`、一言、`⚙`、`↳ メモ` の順)。 */
 export function annotations(r: ScreenRow): {kind: 'goal' | 'line' | 'running' | 'note'; text: string}[] {
   const out: {kind: 'goal' | 'line' | 'running' | 'note'; text: string}[] = [];
   if (r.goal) out.push({kind: 'goal', text: `◎ ${oneLine(r.goal)}`});
@@ -175,7 +175,7 @@ export const SIDE_MIN_COLS = 120;
 const SIDE_GAP = ' │ ';
 /** 右の欄に並べるリンクの数。残りは数だけ出す。 */
 export const SIDE_LINKS = 5;
-const LABEL_W = 6;
+const LABEL_W = 10;
 const WORD_CHAR = /^[!-~]$/;
 const NO_LINE_START = '。、，．）」』】〉》!?！？:;：；.,)]}';
 
@@ -229,7 +229,7 @@ export function hyperlink(href: string, text: string): string {
   return `\x1b]8;;${href}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
-/** 右の欄の行(題、まとめ、リンク)。`rows` を超える分は切り、最後の行を `…` にする。 */
+/** 右の欄の行(題、ダイジェスト、会話リンク)。`rows` を超える分は切り、最後の行を `…` にする。 */
 export function sideLines(side: Side, w: number, rows: number): string[] {
   const out: string[] = [color.bold(truncate(clean(side.title), w)), ''];
   const field = (label: string, value: string) => {
@@ -238,12 +238,12 @@ export function sideLines(side: Side, w: number, rows: number): string[] {
       out.push(`${i === 0 ? color.bold(padEnd(label, LABEL_W)) : ' '.repeat(LABEL_W)}${l}`);
     });
   };
-  if (side.recap) {
-    field('Goal', side.recap.goal);
-    field('Now', side.recap.now);
-    field('Next', side.recap.next);
+  if (side.digest) {
+    field('Goal', side.digest.goal);
+    field('Progress', side.digest.progress);
+    field('Next', side.digest.next);
   } else {
-    const why = side.off ?? 'No recap yet. Recaps come from sessions started with n, when a turn ends.';
+    const why = side.off ?? 'No digest yet. Digests come from sessions started with n, when a turn ends.';
     for (const l of wrap(clean(why), w)) out.push(color.gray(l));
   }
   if (side.links.length > 0) {

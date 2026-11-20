@@ -17,8 +17,8 @@ export interface Env {
   node: string;
   /** この cli の入口(`dist/src/cli.js`)。 */
   cli: string;
-  /** `--recap` で起動したか(一覧の役は、起動の口が渡す `WHATNEXT_RECAP` で知る)。 */
-  recap: boolean;
+  /** `--digest` で起動したか(一覧の役は、起動の口が渡す `WHATNEXT_DIGEST` で知る)。 */
+  digest: boolean;
 }
 
 export function readEnv(env: NodeJS.ProcessEnv = process.env): Env {
@@ -28,11 +28,11 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): Env {
     version: packageVersion(),
     node: process.execPath,
     cli: cliPath(),
-    recap: env.WHATNEXT_RECAP === '1',
+    digest: env.WHATNEXT_DIGEST === '1',
   };
 }
 
-/** まとめの mod の置き場所(パッケージの根の `mod/`。`dist/src/cli/` から3つ上)。 */
+/** ダイジェストの mod の置き場所(パッケージの根の `mod/`。`dist/src/cli/` から3つ上)。 */
 export function modDir(): string {
   const p = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'mod');
   try {
@@ -103,7 +103,7 @@ export function paneCommand(env: Env, role: 'list' | 'guide', pe: NodeJS.Process
     WHATNEXT_ROLE: role,
     WHATNEXT_TMUX_SOCKET: env.socket,
     WHATNEXT_PORT: String(env.port),
-    WHATNEXT_RECAP: role === 'list' && env.recap ? '1' : undefined,
+    WHATNEXT_DIGEST: role === 'list' && env.digest ? '1' : undefined,
     PATH: pe.PATH,
     HOME: pe.HOME,
     XDG_STATE_HOME: pe.XDG_STATE_HOME,

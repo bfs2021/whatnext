@@ -7,13 +7,13 @@ import {run} from '../../lib/input/exec.js';
 import {launchSettings, openReceiver, probe} from '../../lib/input/receiver.js';
 import {Transcripts} from '../../lib/input/transcript.js';
 import {LIST, serverConfig, Tmux} from '../../lib/tmux/tmux.js';
+import {DigestHookStore} from '../input/digest.js';
 import {Observer} from '../input/observe.js';
-import {RecapHookStore} from '../input/recap.js';
 import {Locations, Prs} from '../input/where.js';
 import {App} from '../ops/app.js';
 import {startGuide} from '../ops/guide-session.js';
 import {ATTACH_KEYS, ATTACH_KEYS_HELP} from '../ops/keys.js';
-import {RECAP_LIVE, RECAP_ON} from '../ops/names.js';
+import {DIGEST_LIVE, DIGEST_ON} from '../ops/names.js';
 import {StateFile, statePath} from '../state/state.js';
 import {type Env, modDir, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
 
@@ -39,7 +39,7 @@ export async function startList(env: Env): Promise<number> {
     ? join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
     : join(homedir(), '.claude.json');
 
-  const hooks = new RecapHookStore(env.recap);
+  const hooks = new DigestHookStore(env.digest);
   let settings: string | undefined;
   let pluginDir: string | undefined;
   const occupant = await probe(env.port);
@@ -47,14 +47,14 @@ export async function startList(env: Env): Promise<number> {
     const rec = await openReceiver(env.port, hooks);
     if (rec) {
       settings = launchSettings(env.port);
-      // まとめの mod は、受け口を開けたときだけ付ける(フックと同じ。DESIGN.md「まとめの mod」)
-      if (env.recap) pluginDir = modDir();
+      // ダイジェストの mod は、受け口を開けたときだけ付ける(フックと同じ。DESIGN.md「ダイジェストの mod」)
+      if (env.digest) pluginDir = modDir();
     }
   }
-  // --recap で受け口を開けなかったときは、右の欄にその理由を出す(シナリオ 41 の「エラーを示さない」の、--recap のときだけの例外)
-  const recapOff = env.recap && !settings ? recapOffText(occupant, env.port) : undefined;
+  // --digest で受け口を開けなかったときは、右の欄にその理由を出す(シナリオ 41 の「エラーを示さない」の、--digest のときだけの例外)
+  const digestOff = env.digest && !settings ? digestOffText(occupant, env.port) : undefined;
   log(
-    `start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'} recap=${env.recap}`,
+    `start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'} digest=${env.digest}`,
   );
 
   const r = await tmux.sourceConfig(
@@ -73,19 +73,19 @@ export async function startList(env: Env): Promise<number> {
   );
   if (r.code !== 0) log(`sourceConfig failed: ${r.stderr}`);
   await tmux.t(['set', '-w', '-t', `=${LIST}:`, 'remain-on-exit', 'off']);
-  if (env.recap) await tmux.setOption(RECAP_ON, '1');
-  else await tmux.unsetOption(RECAP_ON);
-  // mod が「まとめを受けているか」を確かめる口(受け口を開けて mod を付けるときだけ置く)
+  if (env.digest) await tmux.setOption(DIGEST_ON, '1');
+  else await tmux.unsetOption(DIGEST_ON);
+  // mod が「ダイジェストを受けているか」を確かめる口(受け口を開けて mod を付けるときだけ置く)
   if (settings && pluginDir) {
     const sock = (await tmux.t(['display-message', '-p', '-t', `=${LIST}:`, '#{socket_path}'])).stdout.trim();
-    settings = withRecapEnv(settings, {
-      WHATNEXT_RECAP_PORT: String(env.port),
-      WHATNEXT_RECAP_TMUX: findTmux(),
-      ...(sock ? {WHATNEXT_RECAP_SOCKET: sock} : {}),
+    settings = withDigestEnv(settings, {
+      WHATNEXT_DIGEST_PORT: String(env.port),
+      WHATNEXT_DIGEST_TMUX: findTmux(),
+      ...(sock ? {WHATNEXT_DIGEST_SOCKET: sock} : {}),
     });
-    await tmux.t(['set', '-s', RECAP_LIVE, String(env.port)]);
+    await tmux.t(['set', '-s', DIGEST_LIVE, String(env.port)]);
   } else {
-    await tmux.t(['set', '-su', RECAP_LIVE]);
+    await tmux.t(['set', '-su', DIGEST_LIVE]);
   }
   const guideCommand = paneCommand(env, 'guide');
   await startGuide(tmux, guideCommand, homedir());
@@ -94,7 +94,7 @@ export async function startList(env: Env): Promise<number> {
   const app_ = new App({
     run: runT,
     tmux,
-    observer: new Observer(runT, hooks, transcripts, Date.now, env.recap ? hooks : undefined),
+    observer: new Observer(runT, hooks, transcripts, Date.now, env.digest ? hooks : undefined),
     locations: new Locations(runT),
     prs: new Prs(runT),
     transcripts,
@@ -106,8 +106,8 @@ export async function startList(env: Env): Promise<number> {
     size: () => ({cols: process.stdout.columns || 80, rows: process.stdout.rows || 24}),
     settings,
     pluginDir,
-    recap: env.recap,
-    recapOff,
+    digest: env.digest,
+    digestOff,
     socket: env.socket,
     port: env.port,
     version: env.version,
@@ -149,8 +149,8 @@ export async function startList(env: Env): Promise<number> {
   return await new Promise<number>(() => {});
 }
 
-/** `--settings` の JSON の `env` に、まとめの mod が読む値(送る先のポート、受けているかを確かめる tmux)を足す。 */
-export function withRecapEnv(settings: string, add: Record<string, string>): string {
+/** `--settings` の JSON の `env` に、ダイジェストの mod が読む値(送る先のポート、受けているかを確かめる tmux)を足す。 */
+export function withDigestEnv(settings: string, add: Record<string, string>): string {
   try {
     const j = JSON.parse(settings) as {env?: Record<string, string>};
     j.env = {...(j.env ?? {}), ...add};
@@ -173,9 +173,9 @@ export function findTmux(path = process.env.PATH ?? ''): string {
   return 'tmux';
 }
 
-/** 受け口を開けなかった理由の文言(右の欄。`--recap` のときだけ)。 */
-export function recapOffText(occupant: 'free' | 'whatnext' | 'other', port: number): string {
-  if (occupant === 'other') return `Recaps are off: port ${port} is used by another program.`;
-  if (occupant === 'whatnext') return `Recaps are off: port ${port} is used by another whatnext.`;
-  return `Recaps are off: could not open port ${port}.`;
+/** 受け口を開けなかった理由の文言(右の欄。`--digest` のときだけ)。 */
+export function digestOffText(occupant: 'free' | 'whatnext' | 'other', port: number): string {
+  if (occupant === 'other') return `Digests are off: port ${port} is used by another program.`;
+  if (occupant === 'whatnext') return `Digests are off: port ${port} is used by another whatnext.`;
+  return `Digests are off: could not open port ${port}.`;
 }

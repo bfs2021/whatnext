@@ -46,7 +46,7 @@ async function main(): Promise<number> {
     return 1;
   }
   if (a.cmd === 'workbench') return workbench(env);
-  return launch({...env, recap: a.recap});
+  return launch({...env, digest: a.digest});
 }
 
 main().then(

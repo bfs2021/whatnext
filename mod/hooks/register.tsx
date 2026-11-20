@@ -1,33 +1,33 @@
 import type {EngineInterface, Register} from 'claude-code';
 import {atom, read, update} from 'claude-code';
 
-import type {FoundLink, Recap} from '../types';
+import type {Digest, FoundLink} from '../types';
+import {DIGEST_SYSTEM, digestBody, digestPrompt, nameOf, parseDigest, promptsOf} from './digest';
 import type {Mention} from './links';
 import {addLinks, mentionsOf, NOT_ARGUMENTS, toolMentions} from './links';
-import {nameOf, parseRecap, promptsOf, RECAP_SYSTEM, recapBody, recapPrompt} from './recap';
 
-// The mod whatnext gives the sessions it starts with `n` while it runs with `--recap` (docs/DESIGN.md "まとめの mod").
-// At each turn end it recaps the session (goal, now, next) with Haiku, keeps the links said in the conversation,
+// The mod whatnext gives the sessions it starts with `n` while it runs with `--digest` (docs/DESIGN.md "ダイジェストの mod").
+// At each turn end it writes a digest of the session (goal, progress, next) with Haiku, keeps the links said in the conversation,
 // draws both in a pane and posts them to whatnext's receiver. Sending fails silently. When no whatnext takes
-// recaps on that port (it quit, runs without --recap, or something else holds the port), the turn end calls
+// digests on that port (it quit, runs without --digest, or something else holds the port), the turn end calls
 // no model and sends nothing.
 
-const PANE = 'whatnext-recap';
-const COMMAND = 'wn-recap';
+const PANE = 'whatnext-digest';
+const COMMAND = 'wn-digest';
 /** How many links the pane draws; the rest are counted. */
 const SHOWN_LINKS = 8;
 const DEFAULT_PORT = '14318';
-/** The tmux server option whatnext sets to its receiver's port while it takes recaps. */
-const LIVE_OPTION = '@wn_recap_port';
+/** The tmux server option whatnext sets to its receiver's port while it takes digests. */
+const LIVE_OPTION = '@wn_digest_port';
 
-const recap = atom({plugin: 'whatnext-recap', key: 'recap'} as const, null as Recap, {shape: 'recap-1'});
-const links = atom({plugin: 'whatnext-recap', key: 'links'} as const, [] as FoundLink[], {shape: 'links-1'});
+const digest = atom({plugin: 'whatnext-digest', key: 'digest'} as const, null as Digest, {shape: 'digest-1'});
+const links = atom({plugin: 'whatnext-digest', key: 'links'} as const, [] as FoundLink[], {shape: 'links-1'});
 
-/** The newest recap asked for: an older answer that comes back later is dropped. */
+/** The newest digest asked for: an older answer that comes back later is dropped. */
 let asked = 0;
 
 async function portOf($: EngineInterface): Promise<string> {
-  const port = (await $.env.get('WHATNEXT_RECAP_PORT').catch(() => undefined)) || DEFAULT_PORT;
+  const port = (await $.env.get('WHATNEXT_DIGEST_PORT').catch(() => undefined)) || DEFAULT_PORT;
   return /^\d+$/.test(port) ? port : DEFAULT_PORT;
 }
 
@@ -36,12 +36,12 @@ async function receiverUrl($: EngineInterface): Promise<string> {
 }
 
 /**
- * Whether a whatnext takes recaps on the port this session sends to: its tmux server holds that port in
- * `@wn_recap_port`. A server gone, the option unset or another port is no; so is a check that fails.
+ * Whether a whatnext takes digests on the port this session sends to: its tmux server holds that port in
+ * `@wn_digest_port`. A server gone, the option unset or another port is no; so is a check that fails.
  */
 async function receiving($: EngineInterface): Promise<boolean> {
-  const tmux = (await $.env.get('WHATNEXT_RECAP_TMUX').catch(() => undefined)) || 'tmux';
-  const socket = await $.env.get('WHATNEXT_RECAP_SOCKET').catch(() => undefined);
+  const tmux = (await $.env.get('WHATNEXT_DIGEST_TMUX').catch(() => undefined)) || 'tmux';
+  const socket = await $.env.get('WHATNEXT_DIGEST_SOCKET').catch(() => undefined);
   const server = socket ? ['-S', socket] : ['-L', 'whatnext'];
   const r = await $.process
     .run([tmux, ...server, 'show-options', '-sqv', LIVE_OPTION], {timeoutMs: 5000})
@@ -52,7 +52,7 @@ async function receiving($: EngineInterface): Promise<boolean> {
 async function send($: EngineInterface): Promise<void> {
   const sid = await $.session.id().catch(() => '');
   if (!sid) return;
-  const body = recapBody(sid, await read($, recap), await read($, links));
+  const body = digestBody(sid, await read($, digest), await read($, links));
   await $.http
     .fetch(await receiverUrl($), {
       method: 'POST',
@@ -67,35 +67,35 @@ async function noteLinks($: EngineInterface, mentions: readonly Mention[]): Prom
   await update($, links, known => addLinks(known, mentions));
 }
 
-async function writeRecap($: EngineInterface, answer: string): Promise<void> {
+async function writeDigest($: EngineInterface, answer: string): Promise<void> {
   const mine = ++asked;
   const messages = await $.session.messages().catch(() => undefined);
   const prompts = Array.isArray(messages) ? promptsOf(messages) : [];
-  const prev = await read($, recap);
+  const prev = await read($, digest);
   if (prompts.length > 0 || answer) {
-    $.ui.log('whatnext-recap: asking the model for a recap', {to: 'debug'});
+    $.ui.log('whatnext-digest: asking the model for a digest', {to: 'debug'});
     const r = await $.model.complete({
       model: 'haiku',
-      system: RECAP_SYSTEM,
-      prompt: recapPrompt(prev, prompts, answer),
+      system: DIGEST_SYSTEM,
+      prompt: digestPrompt(prev, prompts, answer),
       maxTokens: 400,
       effort: 'low',
       timeoutMs: 45000,
     });
     if (mine !== asked) return;
-    const next = r.isAnswered ? parseRecap(r.text) : null;
-    if (next) await update($, recap, () => next);
+    const next = r.isAnswered ? parseDigest(r.text) : null;
+    if (next) await update($, digest, () => next);
   }
   await send($);
 }
 
 async function openPane($: EngineInterface): Promise<void> {
-  await $.ui.open({id: PANE, title: 'Recap', columns: 46});
+  await $.ui.open({id: PANE, title: 'Digest', columns: 46});
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({name: COMMAND, description: 'Open the recap pane (goal, now, next and links)'});
+    await $.command.register({name: COMMAND, description: 'Open the digest pane (goal, progress, next and links)'});
     // The history the session resumed: its links, read again.
     const messages = await $.session.messages().catch(() => undefined);
     if (Array.isArray(messages)) await update($, links, () => addLinks([], mentionsOf(messages)));
@@ -105,8 +105,8 @@ export const register: Register = on => {
 
   on('command.run', {command: COMMAND}, async $ => {
     await openPane($);
-    return {text: 'Recap pane opened.'};
-  }).catch(() => ({text: 'Could not open the recap pane.'}));
+    return {text: 'Digest pane opened.'};
+  }).catch(() => ({text: 'Could not open the digest pane.'}));
 
   on('turn.start', async ($, e, next) => {
     if (!e.agentId) await noteLinks($, [e.text]).catch(() => undefined);
@@ -138,10 +138,10 @@ export const register: Register = on => {
       const answer = e.reason === 'answer' ? e.answer : '';
       void (async () => {
         if (!(await receiving($))) {
-          $.ui.log('whatnext-recap: no whatnext takes recaps; skipped the model call', {to: 'debug'});
+          $.ui.log('whatnext-digest: no whatnext takes digests; skipped the model call', {to: 'debug'});
           return;
         }
-        await writeRecap($, answer).catch(() => send($).catch(() => undefined));
+        await writeDigest($, answer).catch(() => send($).catch(() => undefined));
       })().catch(() => undefined);
     }
     return done;
@@ -149,11 +149,11 @@ export const register: Register = on => {
 
   on('ui.render', {component: 'Pane', requestId: PANE}, async ($, e) => {
     const {Box, Text, Link} = $.ui.resolve(e);
-    const r = await read($, recap);
+    const r = await read($, digest);
     const found = await read($, links);
     const field = (label: string, value: string) => (
       <Box flexDirection="row">
-        <Box width={6} flexShrink={0}>
+        <Box width={10} flexShrink={0}>
           <Text bold>{label}</Text>
         </Box>
         <Box flexGrow={1}>
@@ -166,11 +166,11 @@ export const register: Register = on => {
         {r ? (
           <Box flexDirection="column">
             {field('Goal', r.goal)}
-            {field('Now', r.now)}
+            {field('Progress', r.progress)}
             {field('Next', r.next)}
           </Box>
         ) : (
-          <Text dimColor>No recap yet. It comes when a turn ends.</Text>
+          <Text dimColor>No digest yet. It comes when a turn ends.</Text>
         )}
         {found.length > 0 ? (
           <Box flexDirection="column" marginTop={1}>

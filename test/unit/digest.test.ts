@@ -1,24 +1,24 @@
 import {describe, expect, it} from 'vitest';
 import {stripAnsi, width} from '../../lib/text/text.js';
 import {parseArgs} from '../../src/cli/args.js';
-import {findTmux, recapOffText, withRecapEnv} from '../../src/cli/list.js';
-import {parseRecapBody, RecapHookStore, sanitize} from '../../src/input/recap.js';
+import {digestOffText, findTmux, withDigestEnv} from '../../src/cli/list.js';
+import {DigestHookStore, parseDigestBody, sanitize} from '../../src/input/digest.js';
 import {hyperlink, render, SIDE_MIN_COLS, sideLines, wrap} from '../../src/screen/screen.js';
 import type {Screen, ScreenRow} from '../../src/screen/types.js';
 
 const body = (over: Record<string, unknown> = {}) => ({
-  hook_event_name: 'WhatnextRecap',
+  hook_event_name: 'WhatnextDigest',
   session_id: 's1',
-  recap: {goal: 'ログイン画面の二重送信を直す', now: 'ボタンを無効にした', next: 'レビューを待つ'},
+  digest: {goal: 'ログイン画面の二重送信を直す', progress: 'ボタンを無効にした', next: 'レビューを待つ'},
   links: [{label: 'PR #58', href: 'https://github.com/acme/app/pull/58'}],
   ...over,
 });
 
-describe('まとめの受け口', () => {
-  it('まとめの本文を読み、制御文字を落とし、http(s) でないリンクを捨てる', () => {
-    const r = parseRecapBody(
+describe('ダイジェストの受け口', () => {
+  it('ダイジェストの本文を読み、制御文字を落とし、http(s) でないリンクを捨てる', () => {
+    const r = parseDigestBody(
       body({
-        recap: {goal: 'a\x1b[31mb\nc', now: 'n', next: ''},
+        digest: {goal: 'a\x1b[31mb\nc', progress: 'n', next: ''},
         links: [
           {label: 'x\x07', href: 'https://example.com/a'},
           {label: 'bad', href: 'file:///etc/passwd'},
@@ -28,16 +28,16 @@ describe('まとめの受け口', () => {
       5,
     );
     expect(r?.sid).toBe('s1');
-    expect(r?.facts.recap).toEqual({goal: 'a[31mb c', now: 'n', next: ''});
+    expect(r?.facts.digest).toEqual({goal: 'a[31mb c', progress: 'n', next: ''});
     expect(r?.facts.links).toEqual([{label: 'x', href: 'https://example.com/a'}]);
     expect(r?.facts.at).toBe(5);
   });
 
-  it('文字列の本文も読む。まとめでない本文、セッションのない本文は読まない', () => {
-    expect(parseRecapBody(JSON.stringify(body()), 0)?.facts.recap?.goal).toBe('ログイン画面の二重送信を直す');
-    expect(parseRecapBody({hook_event_name: 'Stop', session_id: 's1'}, 0)).toBeUndefined();
-    expect(parseRecapBody(body({session_id: ''}), 0)).toBeUndefined();
-    expect(parseRecapBody('not json', 0)).toBeUndefined();
+  it('文字列の本文も読む。ダイジェストでない本文、セッションのない本文は読まない', () => {
+    expect(parseDigestBody(JSON.stringify(body()), 0)?.facts.digest?.goal).toBe('ログイン画面の二重送信を直す');
+    expect(parseDigestBody({hook_event_name: 'Stop', session_id: 's1'}, 0)).toBeUndefined();
+    expect(parseDigestBody(body({session_id: ''}), 0)).toBeUndefined();
+    expect(parseDigestBody('not json', 0)).toBeUndefined();
   });
 
   it('長さを切る', () => {
@@ -45,30 +45,30 @@ describe('まとめの受け口', () => {
     expect(sanitize(3, 10)).toBe('');
   });
 
-  it('--recap のときだけ持ち、まとめのない回は前のまとめを残す。消えたセッションは忘れる', () => {
-    const on = new RecapHookStore(true, () => 1);
+  it('--digest のときだけ持ち、ダイジェストのない回は前のダイジェストを残す。消えたセッションは忘れる', () => {
+    const on = new DigestHookStore(true, () => 1);
     on.receiveHook(body());
-    on.receiveHook(body({recap: null, links: []}));
-    expect(on.recapOf('s1')?.recap?.goal).toBe('ログイン画面の二重送信を直す');
-    expect(on.recapOf('s1')?.links).toEqual([]);
+    on.receiveHook(body({digest: null, links: []}));
+    expect(on.digestOf('s1')?.digest?.goal).toBe('ログイン画面の二重送信を直す');
+    expect(on.digestOf('s1')?.links).toEqual([]);
     on.forget(new Set(['s2']));
-    expect(on.recapOf('s1')).toBeUndefined();
+    expect(on.digestOf('s1')).toBeUndefined();
 
-    const off = new RecapHookStore(false);
+    const off = new DigestHookStore(false);
     off.receiveHook(body());
-    expect(off.recapOf('s1')).toBeUndefined();
+    expect(off.digestOf('s1')).toBeUndefined();
     expect(off.snapshot().size).toBe(0);
   });
 
-  it('まとめのほかのフックは今までどおり受ける', () => {
-    const s = new RecapHookStore(true);
+  it('ダイジェストのほかのフックは今までどおり受ける', () => {
+    const s = new DigestHookStore(true);
     s.receiveHook({hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hello'});
     expect(s.get('s1').prompt?.text).toBe('hello');
   });
 
   it('mod に送り先のポートと、受けているかを確かめる tmux を渡す', () => {
-    const add = {WHATNEXT_RECAP_PORT: '14555', WHATNEXT_RECAP_TMUX: '/x/tmux', WHATNEXT_RECAP_SOCKET: '/tmp/s'};
-    const j = JSON.parse(withRecapEnv(JSON.stringify({hooks: {}, env: {A: '1'}}), add));
+    const add = {WHATNEXT_DIGEST_PORT: '14555', WHATNEXT_DIGEST_TMUX: '/x/tmux', WHATNEXT_DIGEST_SOCKET: '/tmp/s'};
+    const j = JSON.parse(withDigestEnv(JSON.stringify({hooks: {}, env: {A: '1'}}), add));
     expect(j.env).toEqual({A: '1', ...add});
     expect(j.hooks).toEqual({});
     expect(findTmux('/nonexistent')).toBe('tmux');
@@ -77,13 +77,13 @@ describe('まとめの受け口', () => {
 });
 
 describe('起動の引数', () => {
-  it('--recap は単独のときだけ。--help は先頭のときだけ', () => {
-    expect(parseArgs([])).toEqual({cmd: 'list', recap: false});
-    expect(parseArgs(['--recap'])).toEqual({cmd: 'list', recap: true});
-    expect(parseArgs(['--recap', '--help'])).toEqual({cmd: 'bad', arg: '--help'});
-    expect(parseArgs(['--recap', 'workbench'])).toEqual({cmd: 'bad', arg: 'workbench'});
-    expect(parseArgs(['workbench', '--recap'])).toEqual({cmd: 'bad', arg: '--recap'});
-    expect(parseArgs(['--help', '--recap'])).toEqual({cmd: 'help'});
+  it('--digest は単独のときだけ。--help は先頭のときだけ', () => {
+    expect(parseArgs([])).toEqual({cmd: 'list', digest: false});
+    expect(parseArgs(['--digest'])).toEqual({cmd: 'list', digest: true});
+    expect(parseArgs(['--digest', '--help'])).toEqual({cmd: 'bad', arg: '--help'});
+    expect(parseArgs(['--digest', 'workbench'])).toEqual({cmd: 'bad', arg: 'workbench'});
+    expect(parseArgs(['workbench', '--digest'])).toEqual({cmd: 'bad', arg: '--digest'});
+    expect(parseArgs(['--help', '--digest'])).toEqual({cmd: 'help'});
   });
 });
 
@@ -138,9 +138,9 @@ const screen = (w: number, over: Partial<Screen> = {}): Screen => ({
   keys: 'keys',
   side: {
     title: 'fix-login',
-    recap: {
+    digest: {
       goal: 'ログイン画面の二重送信を直す',
-      now: '送信ボタンを押下中は無効にし、テストを2件足した。PR #58 を作った。',
+      progress: '送信ボタンを押下中は無効にし、テストを2件足した。PR #58 を作った。',
       next: 'レビューの指摘を待つ',
     },
     links: [
@@ -152,8 +152,8 @@ const screen = (w: number, over: Partial<Screen> = {}): Screen => ({
   ...over,
 });
 
-describe('まとめの画面', () => {
-  it('目的の行は一言の上に出る(目的 → 一言 → ⚙ → ↳ メモ)', () => {
+describe('ダイジェストの画面', () => {
+  it('Goal の行は一言の上に出る(Goal → 一言 → ⚙ → ↳ メモ)', () => {
     const lines = plain(screen(100, {side: undefined}));
     const i = lines.findIndex(l => l.includes('◎ ログイン画面の二重送信を直す'));
     expect(i).toBeGreaterThan(0);
@@ -165,26 +165,39 @@ describe('まとめの画面', () => {
   it(`端末が ${SIDE_MIN_COLS} 桁以上なら右に欄を出し、どの行も端末の幅に収める`, () => {
     const lines = plain(screen(150));
     expect(lines[0]).toMatch(/SESSION.*│ fix-login$/);
-    expect(lines.some(l => /│ Goal {2}ログイン画面の二重送信を直す$/.test(l))).toBe(true);
+    expect(lines.some(l => /│ Goal {6}ログイン画面の二重送信を直す$/.test(l))).toBe(true);
     expect(lines.some(l => /│ Links$/.test(l))).toBe(true);
     for (const l of render(screen(150))) expect(width(l)).toBeLessThanOrEqual(150);
     // 最下部のキーの説明は全幅のまま
     expect(lines.at(-1)).toBe('keys');
   });
 
-  it(`${SIDE_MIN_COLS} 桁より狭ければ右の欄を出さない(目的の行は出る)`, () => {
+  it(`${SIDE_MIN_COLS} 桁より狭ければ右の欄を出さない(Goal の行は出る)`, () => {
     const lines = plain(screen(SIDE_MIN_COLS - 1));
     expect(lines.some(l => l.includes('│ Goal'))).toBe(false);
     expect(lines.some(l => l.includes('◎ ログイン'))).toBe(true);
   });
 
-  it('まとめのない行では、まだないことを出す。高さに収まらない分は切る', () => {
+  it('ダイジェストのない行では、まだないことを出す。高さに収まらない分は切る', () => {
     const none = sideLines({title: 'demo', links: []}, 46, 20).map(stripAnsi);
-    expect(none[2]).toMatch(/^No recap yet\./);
+    expect(none[2]).toMatch(/^No digest yet\./);
+    // 会話リンクだけが届いた行では、まだないことと Links を一緒に出す
+    const linksOnly = sideLines(
+      {title: 'demo', links: [link('PR #58', 'https://github.com/acme/app/pull/58')]},
+      46,
+      20,
+    );
+    expect(linksOnly.map(l => stripAnsi(unlink(l))).slice(2)).toEqual([
+      'No digest yet. Digests come from sessions',
+      'started with n, when a turn ends.',
+      '',
+      'Links',
+      '  PR #58',
+    ]);
     const many = sideLines(
       {
         title: 't',
-        recap: {goal: 'g', now: 'n', next: 'x'},
+        digest: {goal: 'g', progress: 'n', next: 'x'},
         links: ['1', '2', '3', '4', '5', '6', '7'].map(x => link(x)),
       },
       46,
@@ -193,11 +206,11 @@ describe('まとめの画面', () => {
     expect(many).toContain('  5');
     expect(many).toContain('  +2 more');
     const cut = sideLines(
-      {title: 't', recap: {goal: 'g', now: 'n', next: 'x'}, links: [link('1'), link('2')]},
+      {title: 't', digest: {goal: 'g', progress: 'n', next: 'x'}, links: [link('1'), link('2')]},
       46,
       4,
     ).map(stripAnsi);
-    expect(cut).toEqual(['t', '', 'Goal  g', '…']);
+    expect(cut).toEqual(['t', '', 'Goal      g', '…']);
   });
 
   it('右の欄のリンクは、埋め込みのリンク(OSC 8)で描き、幅には名前だけを数える', () => {
@@ -221,15 +234,15 @@ describe('まとめの画面', () => {
 
   it('受け口を開けなかったときは、まだないことの代わりに理由を出す', () => {
     const off = sideLines(
-      {title: 'demo', links: [], off: 'Recaps are off: port 14318 is used by another program.'},
+      {title: 'demo', links: [], off: 'Digests are off: port 14318 is used by another program.'},
       46,
       20,
     ).map(stripAnsi);
-    expect(off.slice(2, 4)).toEqual(['Recaps are off: port 14318 is used by another', 'program.']);
-    expect(off.join('\n')).not.toMatch(/No recap yet/);
-    expect(recapOffText('other', 14318)).toBe('Recaps are off: port 14318 is used by another program.');
-    expect(recapOffText('whatnext', 15000)).toBe('Recaps are off: port 15000 is used by another whatnext.');
-    expect(recapOffText('free', 15000)).toBe('Recaps are off: could not open port 15000.');
+    expect(off.slice(2, 4)).toEqual(['Digests are off: port 14318 is used by another', 'program.']);
+    expect(off.join('\n')).not.toMatch(/No digest yet/);
+    expect(digestOffText('other', 14318)).toBe('Digests are off: port 14318 is used by another program.');
+    expect(digestOffText('whatnext', 15000)).toBe('Digests are off: port 15000 is used by another whatnext.');
+    expect(digestOffText('free', 15000)).toBe('Digests are off: could not open port 15000.');
   });
 
   it('折り返しは表示幅で数え、空白があればその後ろで折る', () => {

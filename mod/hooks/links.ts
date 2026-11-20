@@ -1,5 +1,5 @@
 // Moved from session-timeline 0.5.0 (masahirompp/skills, MIT, the same author) with its rules for which
-// URLs are listed: docs/DESIGN.md "まとめの mod".
+// URLs are listed: docs/DESIGN.md "ダイジェストの mod".
 import type {SessionMessage} from 'claude-code';
 
 import type {FoundLink} from '../types';

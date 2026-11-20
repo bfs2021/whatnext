@@ -18,7 +18,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ### 層の定義
 
-- 永続層: `docs/`(PRODUCT.md、DESIGN.md、adr/)、`README.md`、`LICENSE`、`CONTEXT.md`、`.claude/skills/`、CLAUDE.md、昇格済みモジュール: `lib/`、まとめの mod: `mod/`(テストの `mod/tests/` を含む。`docs/adr/0022-ship-a-recap-mod-for-launched-sessions.md`) — 厳格に維持する
+- 永続層: `docs/`(PRODUCT.md、DESIGN.md、adr/)、`README.md`、`LICENSE`、`CONTEXT.md`、`.claude/skills/`、CLAUDE.md、昇格済みモジュール: `lib/`、ダイジェストの mod: `mod/`(テストの `mod/tests/` を含む。`docs/adr/0022-ship-a-digest-mod-for-launched-sessions.md`) — 厳格に維持する
 - 使い捨て層: `src/` とテストコード — サイクル末に全削除する。品質は「動けばOK」
 - ルートのビルド・パッケージ設定(`package.json`、`package-lock.json`、`tsconfig.json`、`.gitignore`)は削除対象外として残るが、次サイクルの足場であり自由に書き直してよい。ビルド出力 `dist/` は使い捨て層
 

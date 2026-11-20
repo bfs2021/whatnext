@@ -1,18 +1,17 @@
 import type {On, SessionMessage} from 'claude-code';
 import type {Engine} from 'claude-code/testing';
 import {expect, test} from 'claude-code/testing';
-
+import {DIGEST_SYSTEM, digestPrompt, parseDigest} from '../hooks/digest';
 import {addLinks, linkOf, urlsIn} from '../hooks/links';
-import {parseRecap, RECAP_SYSTEM, recapPrompt} from '../hooks/recap';
 
 // Run with `npm run test:mod` (`claude plugin test mod`). The engine's hooks below stand for Claude Code.
 
 const PANE = {
-  plugin: 'whatnext-recap',
+  plugin: 'whatnext-digest',
   component: 'Pane',
-  requestId: 'whatnext-recap',
+  requestId: 'whatnext-digest',
   props: {
-    title: 'Recap',
+    title: 'Digest',
     isFocused: false,
     bodyColumns: 44,
     placement: 'dock',
@@ -39,7 +38,7 @@ function engine(
     port?: string;
     asks?: string[];
     /**
-     * What whatnext's tmux server holds in `@wn_recap_port` (the port it takes recaps on); null when no server,
+     * What whatnext's tmux server holds in `@wn_digest_port` (the port it takes digests on); null when no server,
      * an Error when tmux cannot start.
      */
     live?: () => string | null | Error;
@@ -48,9 +47,9 @@ function engine(
 ): Posted[] {
   const posted: Posted[] = [];
   const vars: Record<string, string | undefined> = {
-    WHATNEXT_RECAP_PORT: opts.port,
-    WHATNEXT_RECAP_TMUX: '/opt/tmux',
-    WHATNEXT_RECAP_SOCKET: '/tmp/tmux-501/whatnext',
+    WHATNEXT_DIGEST_PORT: opts.port,
+    WHATNEXT_DIGEST_TMUX: '/opt/tmux',
+    WHATNEXT_DIGEST_SOCKET: '/tmp/tmux-501/whatnext',
   };
   on('session.messages', () => ({value: (opts.history?.() ?? []) as SessionMessage[]}));
   on('session.id', () => ({value: 'sid-1'}));
@@ -65,7 +64,7 @@ function engine(
   });
   on('model.complete', (_, e) => {
     opts.asks?.push(String(e.prompt));
-    if (opts.answer === undefined || e.system !== RECAP_SYSTEM) {
+    if (opts.answer === undefined || e.system !== DIGEST_SYSTEM) {
       return {value: {isAnswered: false, reason: 'aborted', usage}};
     }
     return {value: {isAnswered: true, text: opts.answer, usage}};
@@ -75,7 +74,7 @@ function engine(
     return {value: {status: 204, ok: true, headers: {}, text: ''}};
   });
   on('ui.open', () => ({value: {isPlaced: true}}));
-  on('command.register', () => ({value: {command: 'wn-recap'}}));
+  on('command.register', () => ({value: {command: 'wn-digest'}}));
   on('session.start', (_, e) => ({cwd: e.cwd}));
   on('turn.start', (_, e) => ({turnId: e.turnId}));
   on('turn.complete', () => ({text: ''}));
@@ -88,21 +87,21 @@ async function turn($: Engine, prompt: string, answer: string, id = 't1'): Promi
   await settle();
 }
 
-test('at a turn end the recap and the links go to whatnext, on the port whatnext gave', async ($, on) => {
+test('at a turn end the digest and the links go to whatnext, on the port whatnext gave', async ($, on) => {
   const prompts: SessionMessage[] = [{role: 'user', text: 'ログイン画面の二重送信を直して', toolUses: []}];
   const posted = engine(on, {
     history: () => prompts,
     port: '14555',
-    answer: '{"goal": "ログイン画面の二重送信を直す", "now": "ボタンを無効にした", "next": "レビューを待つ"}',
+    answer: '{"goal": "ログイン画面の二重送信を直す", "progress": "ボタンを無効にした", "next": "レビューを待つ"}',
   });
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   await turn($, 'ログイン画面の二重送信を直して', '直しました。[PR #58](https://github.com/acme/app/pull/58)');
   const last = posted.at(-1);
   expect(last?.url).toBe('http://127.0.0.1:14555/v1/hooks');
   expect(last?.body).toEqual({
-    hook_event_name: 'WhatnextRecap',
+    hook_event_name: 'WhatnextDigest',
     session_id: 'sid-1',
-    recap: {goal: 'ログイン画面の二重送信を直す', now: 'ボタンを無効にした', next: 'レビューを待つ'},
+    digest: {goal: 'ログイン画面の二重送信を直す', progress: 'ボタンを無効にした', next: 'レビューを待つ'},
     links: [{label: 'PR #58', href: 'https://github.com/acme/app/pull/58'}],
   });
 });
@@ -112,36 +111,36 @@ test('with no port given it posts to 14318; a failed model call still sends the 
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   await turn($, 'see https://github.com/acme/app/issues/412', 'ok');
   expect(posted.at(-1)?.url).toBe('http://127.0.0.1:14318/v1/hooks');
-  expect(posted.at(-1)?.body.recap).toBe(null);
+  expect(posted.at(-1)?.body.digest).toBe(null);
   expect(posted.at(-1)?.body.links).toEqual([{label: 'acme/app#412', href: 'https://github.com/acme/app/issues/412'}]);
 });
 
-test('the next recap reads the previous one, the instructions and the last answer', async ($, on) => {
+test('the next digest reads the previous one, the instructions and the last answer', async ($, on) => {
   const asks: string[] = [];
   const history: SessionMessage[] = [
     {role: 'user', text: '認証をトークン方式へ移して', toolUses: []},
     {role: 'assistant', text: '半分移しました', toolUses: []},
   ];
-  engine(on, {history: () => history, asks, answer: '{"goal": "認証を移す", "now": "半分", "next": "admin"}'});
+  engine(on, {history: () => history, asks, answer: '{"goal": "認証を移す", "progress": "半分", "next": "admin"}'});
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   await turn($, '認証をトークン方式へ移して', '半分移しました');
   history.push({role: 'user', text: 'admin 配下も', toolUses: []});
   await turn($, 'admin 配下も', '移しました', 't2');
-  expect(asks.at(-1)).toContain('## Previous recap');
+  expect(asks.at(-1)).toContain('## Previous digest');
   expect(asks.at(-1)).toContain('"goal":"認証を移す"');
   expect(asks.at(-1)).toContain('- admin 配下も');
   expect(asks.at(-1)).toContain('移しました');
 });
 
-test('the pane draws Goal, Now, Next and the links under the same headings as the list', async ($, on) => {
+test('the pane draws Goal, Progress, Next and the links under the same headings as the list', async ($, on) => {
   engine(on, {
     history: () => [{role: 'user', text: 'x', toolUses: []}],
-    answer: '{"goal": "G", "now": "N", "next": "X"}',
+    answer: '{"goal": "G", "progress": "N", "next": "X"}',
   });
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   await turn($, 'x', 'https://github.com/acme/app/commit/3f2a91c0aa');
   const ui = await $.ui.mount({...PANE, surface: 'terminal'});
-  for (const t of [/^Goal$/, /^Now$/, /^Next$/, /^Links$/, /^G$/, /^N$/, /^X$/]) {
+  for (const t of [/^Goal$/, /^Progress$/, /^Next$/, /^Links$/, /^G$/, /^N$/, /^X$/]) {
     expect(await ui.find({type: 'Text', text: t})).toBeTruthy();
   }
   expect((await ui.findAll({type: 'Link'})).map(l => l.props.href)).toEqual([
@@ -150,20 +149,24 @@ test('the pane draws Goal, Now, Next and the links under the same headings as th
   await ui.unmount();
 });
 
-test('before the first turn ends the pane says no recap yet', async ($, on) => {
+test('before the first turn ends the pane says no digest yet', async ($, on) => {
   engine(on);
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   const ui = await $.ui.mount({...PANE, surface: 'terminal'});
-  expect(await ui.find({type: 'Text', text: /No recap yet/})).toBeTruthy();
+  expect(await ui.find({type: 'Text', text: /No digest yet/})).toBeTruthy();
   await ui.unmount();
 });
 
-test('the recap is parsed from JSON, cut to its lengths, and none when it is empty or not JSON', () => {
-  expect(parseRecap('```json\n{"goal": "a", "now": "b", "next": ""}\n```')).toEqual({goal: 'a', now: 'b', next: ''});
-  expect(parseRecap('no json')).toBe(null);
-  expect(parseRecap('{"goal": "", "now": "", "next": ""}')).toBe(null);
-  expect(parseRecap(`{"goal": "${'x'.repeat(200)}"}`)?.goal.length).toBe(80);
-  expect(recapPrompt(null, ['a'], '')).not.toContain('Previous recap');
+test('the digest is parsed from JSON, cut to its lengths, and none when it is empty or not JSON', () => {
+  expect(parseDigest('```json\n{"goal": "a", "progress": "b", "next": ""}\n```')).toEqual({
+    goal: 'a',
+    progress: 'b',
+    next: '',
+  });
+  expect(parseDigest('no json')).toBe(null);
+  expect(parseDigest('{"goal": "", "progress": "", "next": ""}')).toBe(null);
+  expect(parseDigest(`{"goal": "${'x'.repeat(200)}"}`)?.goal.length).toBe(80);
+  expect(digestPrompt(null, ['a'], '')).not.toContain('Previous digest');
 });
 
 // The link rules, moved with links.ts from session-timeline.
@@ -208,7 +211,7 @@ test("a tool call's output is not listed; its URL argument is", async ($, on) =>
   expect(posted.at(-1)?.body.links).toEqual([{label: 'docs.example.com/mods', href: 'https://docs.example.com/mods'}]);
 });
 
-test('with no whatnext taking recaps, a turn end calls no model and sends nothing; it resumes once one does', async ($, on) => {
+test('with no whatnext taking digests, a turn end calls no model and sends nothing; it resumes once one does', async ($, on) => {
   const asks: string[] = [];
   const checks: string[][] = [];
   let live: string | null = null;
@@ -218,7 +221,7 @@ test('with no whatnext taking recaps, a turn end calls no model and sends nothin
     asks,
     checks,
     live: () => live,
-    answer: '{"goal": "G", "now": "N", "next": "X"}',
+    answer: '{"goal": "G", "progress": "N", "next": "X"}',
   });
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
   // whatnext quit: its tmux server is gone
@@ -229,9 +232,9 @@ test('with no whatnext taking recaps, a turn end calls no model and sends nothin
     '/tmp/tmux-501/whatnext',
     'show-options',
     '-sqv',
-    '@wn_recap_port',
+    '@wn_digest_port',
   ]);
-  // whatnext runs again, without --recap (the option unset), or takes recaps on another port
+  // whatnext runs again, without --digest (the option unset), or takes digests on another port
   live = '';
   await turn($, 'x', 'ok', 't2');
   live = '14318';
@@ -242,15 +245,15 @@ test('with no whatnext taking recaps, a turn end calls no model and sends nothin
   const ui = await $.ui.mount({...PANE, surface: 'terminal'});
   expect((await ui.findAll({type: 'Link'})).map(l => l.props.href)).toEqual(['https://github.com/acme/app/pull/1']);
   await ui.unmount();
-  // whatnext runs with --recap again: the next turn end recaps and sends
+  // whatnext runs with --digest again: the next turn end writes a digest and sends it
   live = '15555';
   await turn($, 'x', 'ok', 't4');
   expect(asks.length).toBe(1);
   expect(posted.at(-1)?.url).toBe('http://127.0.0.1:15555/v1/hooks');
-  expect(posted.at(-1)?.body.recap).toEqual({goal: 'G', now: 'N', next: 'X'});
+  expect(posted.at(-1)?.body.digest).toEqual({goal: 'G', progress: 'N', next: 'X'});
 });
 
-test('a check that cannot run counts as no whatnext taking recaps', async ($, on) => {
+test('a check that cannot run counts as no whatnext taking digests', async ($, on) => {
   const asks: string[] = [];
   const posted = engine(on, {
     history: () => [{role: 'user', text: 'x', toolUses: []}],

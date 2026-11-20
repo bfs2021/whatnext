@@ -1,7 +1,7 @@
 {
-  "name": "whatnext-recap",
+  "name": "whatnext-digest",
   "version": "0.1.0",
-  "description": "Recaps the session (goal, now, next) and the links said in it at each turn end, in a pane and for the whatnext list.",
+  "description": "Writes a digest of the session (goal, progress, next) at each turn end and keeps the links said in it, in a pane and for the whatnext list.",
   "author": { "name": "masahirompp" },
   "license": "MIT",
   "types": "./types/index.d.ts"

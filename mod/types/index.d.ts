@@ -1,5 +1,5 @@
 /** Where the session stands, in three short lines a person reads at a glance. */
-export type Recap = {goal: string; now: string; next: string} | null;
+export type Digest = {goal: string; progress: string; next: string} | null;
 
 /** A URL said in the conversation, listed in the pane to open. */
 export type FoundLink = {
@@ -18,6 +18,6 @@ export type FoundLink = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'whatnext-recap': {recap: Shaped<Recap>; links: Shaped<FoundLink[]>};
+    'whatnext-digest': {digest: Shaped<Digest>; links: Shaped<FoundLink[]>};
   }
 }
