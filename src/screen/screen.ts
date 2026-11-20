@@ -176,9 +176,13 @@ const SIDE_GAP = ' │ ';
 /** 右の欄に並べるリンクの数。残りは数だけ出す。 */
 export const SIDE_LINKS = 5;
 const LABEL_W = 6;
+const WORD_CHAR = /^[!-~]$/;
 const NO_LINE_START = '。、，．）」』】〉》!?！？:;：；.,)]}';
 
-/** 表示幅 `w` で折り返す。空白があれば、その後ろで折る(日本語のように空白のない文は字の境で折る)。 */
+/**
+ * 表示幅 `w` で折り返す。英数字の語の途中では折らず、語の頭(空白の後ろか、全角の字の後ろ)で折る。
+ * 日本語のように空白のない文は字の境で折る。
+ */
 export function wrap(text: string, w: number): string[] {
   const seg = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
   const out: string[] = [];
@@ -187,10 +191,11 @@ export function wrap(text: string, w: number): string[] {
   for (const {segment: g} of seg.segment(text)) {
     const gw = width(g);
     if (lw + gw > w && line !== '') {
-      const sp = line.lastIndexOf(' ');
-      if (g !== ' ' && sp > 0 && width(line.slice(sp + 1)) < w / 2) {
-        out.push(line.slice(0, sp));
-        line = line.slice(sp + 1);
+      // 行末に続く英数字の語(次の字も英数字なら、語の途中で折ることになる)
+      const word = WORD_CHAR.test(g) ? (/[!-~]+$/.exec(line)?.[0] ?? '') : '';
+      if (word && word.length < line.length && width(word) < w / 2) {
+        out.push(line.slice(0, line.length - word.length));
+        line = word;
       } else if (NO_LINE_START.includes(g) && [...seg.segment(line)].length > 1) {
         // 句読点と閉じ括弧を行の頭に置かない(前の1字と一緒に次の行へ送る)
         const parts = [...seg.segment(line)].map(x => x.segment);

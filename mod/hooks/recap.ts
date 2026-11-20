@@ -5,11 +5,11 @@ import type {FoundLink, Recap} from '../types';
 // The recap's model call and what goes to whatnext (docs/DESIGN.md "まとめの mod"). Pure functions.
 
 export const RECAP_SYSTEM = `You recap a coding agent's session for a person who runs several sessions at once and glances at a list of them.
-The input is the previous recap (if any), the person's instructions (oldest first) and the agent's last answer.
-- goal: what the session as a whole is trying to achieve. Keep the previous goal unless the person changed course.
+The input is the previous recap (if any), the user's instructions (oldest first) and the agent's last answer.
+- goal: what the session as a whole is trying to achieve. Keep the previous goal unless the user changed course.
 - now: how far it has got: what is done or decided, concretely.
-- next: what comes next, or what the agent waits for the person to decide. "" if nothing.
-Write in the language the person writes in. Reply with this JSON only:
+- next: what comes next, or what the agent waits for the user to decide. "" if nothing.
+Write every value in the language the user writes in, including the words for "the user". Reply with this JSON only:
 {"goal": "at most 40 characters", "now": "at most 100 characters", "next": "at most 60 characters"}`;
 
 /** How many instructions the model reads, newest last. */

@@ -185,6 +185,13 @@ describe('まとめの画面', () => {
   it('折り返しは表示幅で数え、空白があればその後ろで折る', () => {
     expect(wrap('あいうえお', 4)).toEqual(['あい', 'うえ', 'お']);
     expect(wrap('move the admin routes too', 12)).toEqual(['move the', 'admin routes', 'too']);
+    // 日本語の中の英数字の語も、語の途中では折らない
+    expect(wrap('案を提示。issue #412 と README は未確認', 14)).toEqual([
+      '案を提示。',
+      'issue #412 と',
+      'README は未確',
+      '認',
+    ]);
     // 句読点は行の頭に置かない
     expect(wrap('あいう。えお', 6)).toEqual(['あい', 'う。え', 'お']);
   });
