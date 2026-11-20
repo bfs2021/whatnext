@@ -272,3 +272,78 @@ describe('まとめ', () => {
     expect(s).toMatch(/alpha/);
   });
 });
+
+const WIDE_NAME = 'refactor the auth middleware';
+const WIDE = {cols: 120, rows: 30};
+
+describe('81: 右の欄を出していても、一覧の下の確認の問い・入力欄・知らせとメモの入力欄は、端末の幅に収まる限り末尾まで見える', () => {
+  it('作業台で2つ動いている行の削除の確認が、[y/N] まで見える', async () => {
+    h = new Harness();
+    const app = h.repo('app');
+    h.agents([
+      bg('a', {name: WIDE_NAME, cwd: app, state: 'stopped', pid: undefined, status: undefined}),
+      bg('b', {name: 'fix-login', cwd: app}),
+    ]);
+    await h.start({args: '--recap', size: WIDE});
+    await h.select(WIDE_NAME);
+    await h.keys('w');
+    await sleep(800);
+    h.inner('split-window', '-t', '=sh-a0000000:');
+    await sleep(300);
+    const panes = h.inner('list-panes', '-t', '=sh-a0000000:', '-F', '#{pane_id}').trim().split('\n');
+    h.inner('send-keys', '-t', panes[0] as string, 'tail -f /dev/null', 'Enter');
+    h.inner('send-keys', '-t', panes[1] as string, 'sleep 1004', 'Enter');
+    await sleep(800);
+    await h.keys('C-x');
+    await h.waitFor(/Press Ctrl\+X again within 2s to delete\./);
+    await h.keys('C-x');
+    const s = await h.waitFor(/Delete refactor the auth middleware and stop/);
+    capture('recap-wide-confirm', s);
+    expect(s).toMatch(/Delete refactor the auth middleware and stop .*\[y\/N\]/);
+    await h.keys('n');
+  });
+
+  it('知らせが末尾まで見える', async () => {
+    h = new Harness();
+    const app = h.repo('app');
+    h.agents([tty('t', {name: WIDE_NAME, cwd: app}), bg('b', {name: 'fix-login', cwd: app})]);
+    await h.start({args: '--recap', size: WIDE});
+    await h.select(WIDE_NAME);
+    await h.keys('t');
+    const s = await h.waitFor(/is an interactive session/);
+    capture('recap-wide-notice', s);
+    expect(s).toContain(`${WIDE_NAME} is an interactive session. It has no workbench.`);
+  });
+
+  it('n の Other... の入力欄が、打った文字の末尾(カーソル)まで見える', async () => {
+    h = new Harness();
+    const app = h.repo('app');
+    h.agents([bg('b', {name: 'fix-login', cwd: app})]);
+    await h.start({args: '--recap', size: WIDE, cwd: app});
+    await h.keys('n');
+    await h.waitFor(/New session in:/);
+    await h.type('zzzz');
+    await h.keys('Enter');
+    await h.waitFor(/Directory:/);
+    const path = '~/ghq/github.com/example-org/some-long-repository-name/packages/backend-api';
+    await h.type(path);
+    const s = await h.waitFor(/Directory: /);
+    capture('recap-wide-input', s);
+    expect(s).toContain(`Directory: zzzz${path}█`);
+  });
+
+  it('メモの入力欄が、打った文字の末尾(カーソル)まで見える', async () => {
+    h = new Harness();
+    const app = h.repo('app');
+    h.agents([bg('a', {name: WIDE_NAME, cwd: app}), bg('b', {name: 'fix-login', cwd: app})]);
+    await h.start({args: '--recap', size: WIDE});
+    await h.select(WIDE_NAME);
+    await h.keys('e');
+    await h.waitFor(/Note for /);
+    const note = 'wait for the review of PR #58 before merging';
+    await h.type(note);
+    const s = await h.waitFor(/Note for /);
+    capture('recap-wide-note', s);
+    expect(s).toContain(`Note for ${WIDE_NAME}: ${note}█`);
+  });
+});

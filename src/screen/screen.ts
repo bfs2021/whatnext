@@ -250,34 +250,46 @@ export function sideLines(side: Side, w: number, rows: number): string[] {
 /**
  * 画面の行の配列を組み立てる。どの行も端末の幅に収め、行数は端末の高さを超えない。
  * 右の欄があり、端末の幅が足りるときは、一覧を狭めて右に欄を並べる。最下部の欄(Usage、キーの説明)は全幅のまま。
+ * メモの入力欄と、一覧の下の入力欄・メニュー・知らせは、左の幅に収まらなければ全幅で出し、右の欄はその上で止める
+ * (確認の問いの `[y/N]` のような末尾を切らないため)。
  */
 export function render(raw: Screen): string[] {
   const side = raw.side;
-  if (!side || raw.width < SIDE_MIN_COLS || raw.message !== undefined) return renderList(raw);
+  if (!side || raw.width < SIDE_MIN_COLS || raw.message !== undefined) return layout(raw).lines;
   const leftW = raw.width - SIDE_WIDTH - SIDE_GAP.length;
-  const left = renderList({...raw, width: leftW});
+  const {lines: left, blocks} = layout({...raw, width: leftW}, raw.width);
   const footN = Math.min(left.length, (raw.usage ? 1 : 0) + 1);
   const room = left.length - footN;
-  const sl = sideLines(side, SIDE_WIDTH, room);
-  const out = left.slice(0, room).map((l, i) => `${padEnd(l, leftW)}${color.gray(SIDE_GAP)}${sl[i] ?? ''}`);
+  const wide = blocks.find(([a, b]) => left.slice(a, b).some(l => width(l) > leftW));
+  const stop = Math.min(room, wide ? wide[0] : room);
+  const sl = sideLines(side, SIDE_WIDTH, stop);
+  const out = left
+    .slice(0, room)
+    .map((l, i) => (i < stop ? `${padEnd(l, leftW)}${color.gray(SIDE_GAP)}${sl[i] ?? ''}` : l));
   const w = Math.max(1, raw.width);
   if (raw.usage) out.push(clip(raw.usage, w));
   out.push(clip(raw.keys ?? '', w));
   return out.slice(0, left.length);
 }
 
-function renderList(raw: Screen): string[] {
+/**
+ * 一覧を `raw.width` 桁で組み立てる。メモの入力欄と一覧の下の欄は `full` 桁で切る。
+ * `blocks` は、メモの入力欄と一覧の下の欄(入力欄・メニュー・知らせ。前の空行を含む)の行の範囲。
+ */
+function layout(raw: Screen, full = raw.width): {lines: string[]; blocks: [number, number][]} {
   const s: Screen = {...raw, groups: raw.groups.map(g => ({...g, title: clean(g.title), rows: g.rows.map(cleanRow)}))};
   const w = Math.max(1, s.width);
+  const fw = Math.max(1, full);
   const h = Math.max(1, s.height);
   const bottom: string[] = [];
-  if (s.panel && s.panel.length > 0) bottom.push('', ...s.panel.map(l => clip(l, w)));
-  if (s.notice && s.notice.length > 0) bottom.push('', ...s.notice.map(l => clip(l, w)));
+  if (s.panel && s.panel.length > 0) bottom.push('', ...s.panel.map(l => clip(l, fw)));
+  if (s.notice && s.notice.length > 0) bottom.push('', ...s.notice.map(l => clip(l, fw)));
   const footer: string[] = [];
   if (s.usage) footer.push(clip(s.usage, w));
   footer.push(clip(s.keys ?? '', w));
 
   const top: string[] = [];
+  const blocks: [number, number][] = [];
   if (s.message !== undefined || s.groups.every(g => g.rows.length === 0)) {
     top.push(clip(s.message ?? 'No sessions.', w));
   } else {
@@ -295,6 +307,8 @@ function renderList(raw: Screen): string[] {
     const sections: Section[] = [];
     // 選べる行(起動された行は選べない)。<通し番号>/<総数> もこれで数える
     const rowIndex: string[] = [];
+    // メモの入力欄の行の範囲(body の中)
+    let inlineAt: [number, number] | undefined;
     s.groups.forEach((g, gi) => {
       if (g.rows.length === 0) return;
       const sec: Section = {from: body.length};
@@ -316,7 +330,10 @@ function renderList(raw: Screen): string[] {
           if (inline && a.kind === 'note') continue;
           body.push(annotationLine(r, a.text, w));
         }
-        if (inline) for (const l of inline) body.push(clip(`  ${annotationPrefix(r)}${l}`, w));
+        if (inline) {
+          inlineAt = [body.length, body.length + inline.length];
+          for (const l of inline) body.push(clip(`  ${annotationPrefix(r)}${l}`, fw));
+        }
         if (selected) block = [start, body.length];
         while (owner.length < body.length) owner.push(sec.last);
       }
@@ -362,8 +379,14 @@ function renderList(raw: Screen): string[] {
       if (s.inline && b1 > start + avail) start = Math.max(0, b1 - avail);
     }
     top.push(...body.slice(start, start + avail));
+    if (inlineAt) {
+      const a = Math.max(inlineAt[0], start);
+      const b = Math.min(inlineAt[1], start + avail);
+      if (a < b) blocks.push([1 + a - start, 1 + b - start]);
+    }
     if (pos) top.push(pos);
   }
+  if (bottom.length > 0) blocks.push([top.length, top.length + bottom.length]);
 
   // 下の欄を最下部に寄せる。収まらなければ下から削る(ヘッダは押し出さない)
   let lines = [...top, ...bottom];
@@ -371,7 +394,7 @@ function renderList(raw: Screen): string[] {
   if (lines.length > room) lines = lines.slice(0, Math.max(1, room));
   while (lines.length < room) lines.push('');
   lines.push(...footer);
-  return lines.slice(0, h);
+  return {lines: lines.slice(0, h), blocks};
 }
 
 /** 画面全体を1回の書き込みにする(同期出力、上書き、行末と残りを消す)。 */
