@@ -1,0 +1,8 @@
+{
+  "name": "whatnext-digest",
+  "version": "0.1.0",
+  "description": "Writes a digest of the session (Goal, Progress, Next) at each turn end and keeps the links said in it, in a pane and for the whatnext list.",
+  "author": { "name": "masahirompp" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

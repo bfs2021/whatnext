@@ -21,6 +21,8 @@ export interface ScreenRow {
   ctx?: number;
   /** 作ってからの時間(ミリ秒)。 */
   age?: number;
+  /** ダイジェストの Goal(`◎ <Goal>` の行。`--digest` のときだけ)。 */
+  goal?: string;
   /** 一言。 */
   line?: string;
   /** 作業台で動いているもの。 */
@@ -40,6 +42,17 @@ export interface ScreenGroup {
   rows: ScreenRow[];
 }
 
+/** 一覧の右の欄(カーソルの行のダイジェストと会話リンク。`--digest` のときだけ)。 */
+export interface Side {
+  /** カーソルの行のセッション名。 */
+  title: string;
+  digest?: {goal: string; progress: string; next: string};
+  /** リンク(新しいもの順)。`href` は受け口が検査した http(s) の URL で、埋め込みのリンク(OSC 8)にする。 */
+  links: {label: string; href: string}[];
+  /** ダイジェストが届かない理由(受け口を開けなかったとき)。あれば「まだない」の文言の代わりに出す。 */
+  off?: string;
+}
+
 export interface Screen {
   width: number;
   height: number;
@@ -55,4 +68,5 @@ export interface Screen {
   notice?: string[];
   usage?: string;
   keys?: string;
+  side?: Side;
 }

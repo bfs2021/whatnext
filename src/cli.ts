@@ -1,30 +1,12 @@
 #!/usr/bin/env node
 import {run} from '../lib/input/exec.js';
 import {LIST} from '../lib/tmux/tmux.js';
+import {parseArgs, USAGE} from './cli/args.js';
 import {insideWhatnext, readEnv, tmuxEnv} from './cli/env.js';
 import {guide} from './cli/guide.js';
 import {hasTmux, launch} from './cli/launch.js';
 import {startList} from './cli/list.js';
 import {workbench} from './cli/workbench.js';
-
-const USAGE = `Usage: whatnext [--help]
-       whatnext workbench
-
-A terminal list of your parallel Claude Code sessions, grouped by repository.
-
-  whatnext            Open the list (or come back to the one that is running)
-  whatnext workbench  Show the workbench shell of the session you are looking at (run it in a split)
-  --help              Show this help
-`;
-
-/** 引数を振り分ける。`--help` は先頭の引数にあるときだけ。 */
-export function parseArgs(args: readonly string[]): {cmd: 'help' | 'list' | 'workbench'} | {cmd: 'bad'; arg: string} {
-  if (args[0] === '--help') return {cmd: 'help'};
-  if (args.length === 0) return {cmd: 'list'};
-  if (args[0] === 'workbench' && args.length === 1) return {cmd: 'workbench'};
-  const bad = args[0] === 'workbench' ? args[1] : args[0];
-  return {cmd: 'bad', arg: bad};
-}
 
 async function inListPane(socket: string): Promise<boolean> {
   const pane = process.env.TMUX_PANE;
@@ -64,7 +46,7 @@ async function main(): Promise<number> {
     return 1;
   }
   if (a.cmd === 'workbench') return workbench(env);
-  return launch(env);
+  return launch({...env, digest: a.digest});
 }
 
 main().then(

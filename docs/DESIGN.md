@@ -12,6 +12,7 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 - 本体が依存するコマンドは `claude`、`git`、`tmux` だけで（tmux は作業台のために必須。専用のサーバで使い、利用者の設定には触れない）、URL やエディタを開くときに OS の `open` を、起動したセッションのフックが値を送るときに `curl` を、作業台で動いているもののコマンド行を引くときと、起動された行の起動元を引くとき（プロセス表と、会話の外の MCP サーバが起動した行の環境変数 `MCP_CALLER_PID`）に `ps` を使う（[ADR-0008](adr/0008-dependencies-and-contact-points-with-tmux.md)、[ADR-0019](adr/0019-derive-spawned-rows-from-the-process-table.md)）。任意の依存として、作業ディレクトリの候補を増やすためだけに `ghq` を、行に PR を出し、その PR を開くためだけに `gh` を、あれば使う。
 - 段を決める状態は `claude agents --json --all` からだけ読む（[ADR-0001](adr/0001-read-state-only-from-agents-json.md)）。アカウントの Usage はセッションの状態ではないので、別に `claude -p "/usage"` から読む（[PRODUCT.md](PRODUCT.md)「Usage の表示」を参照）。
 - whatnext が起動したセッションからは、フックのイベントと OTel も受ける（「フックの受信」「OTel の受信」と [ADR-0009](adr/0009-receive-hooks-and-otel-from-launched-sessions.md) を参照）。フックで取れない値は、Claude Code がセッションごとに残す会話記録から補う（「会話記録の読み取り」と [ADR-0011](adr/0011-fill-in-from-transcripts-when-hooks-are-missing.md) を参照）。フック、OTel、会話記録の値は、行の一言と列の表示（CTX、AGE の起点）にだけ使い、段の判定には使わない。どの機能をどの入力から取るかは「機能ごとの入力の出どころ」にまとめる。
+- `--digest` で起動したときだけ、`n` で起動するセッションに、whatnext が配るダイジェストの mod（関数フックのプラグイン。Claude Code の早期公開版の API）を `--plugin-dir` で付け、ダイジェストと会話リンクを受ける（「ダイジェストの mod」「ダイジェストの受信」と [ADR-0022](adr/0022-ship-a-digest-mod-for-launched-sessions.md)）。依存するコマンドは増えない。
 
 ## モジュールの境界
 
@@ -37,13 +38,14 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 | モジュール | 置き場所 |
 |---|---|
 | 段と並び | `src/model/`（待ちの段 `waits.ts`、区切りと木と並び `layout.ts`、`f` のメニューと削除の巻き込み `relations.ts`、カーソル `cursor.ts`） |
-| 入力 | `lib/input/` と `src/input/`（起動元の導き方 `spawners.ts`、場所の問い合わせ `where.ts`、1回の更新の観測 `observe.ts`） |
+| 入力 | `lib/input/` と `src/input/`（起動元の導き方 `spawners.ts`、場所の問い合わせ `where.ts`、1回の更新の観測 `observe.ts`、ダイジェストの受け取り `digest.ts`） |
 | 状態のファイル | `src/state/` |
 | 画面の組み立て | `src/screen/` |
 | 操作 | `src/ops/`（一覧の状態の遷移と外部に頼む作業 `app.ts`、口 `ports.ts`、attach している間のキーの表 `keys.ts`、cli と共有する名前 `names.ts`、候補の絞り込み `filter.ts`） |
 | tmux | `lib/tmux/` |
 | cli | `src/cli.ts` と `src/cli/`（ランチャー `launch.ts`、一覧の役 `list.ts`、`whatnext workbench` `workbench.ts`、案内のプログラム `guide.ts`） |
 
+- ダイジェストの mod（`mod/`）は、この7つのモジュールの外にある。Claude Code の中の別の実行環境で動き、whatnext のコードを import せず、whatnext も mod のコードを import しない。接点は、mod の置き場所（`src/cli/env.ts` の `modDir`）と、受け口に送る本文の形（「ダイジェストの受信」）だけである。
 - 段と並びと画面の組み立ては、昇格した部品（`lib/text`）のほかに依存しない。操作は cli に依存しない。専用サーバのオプションの名前（`@wn_main_tty` など）と案内の中身の形は、cli と操作の両方が使うので、操作の側（`src/ops/names.ts`）に置き、cli が import する（サイクル9で見直した）。
 - 作業台の制御（作業台を作る、作業台の画面の追従、案内、Ghostty の分割とタブの呼び出し）は、一覧の状態と同じ `src/ops/app.ts` にある。どちらも、カーソルと whatnext の画面が映しているものから決まるため、分けると状態を二重に持つことになる。
 - 案内のプログラムは、何を出すかを専用サーバのオプション `@wn_guide`（JSON）から読む。一覧の役が書き、`signalGuide()` で知らせるが、送るシグナルは契約にないので、案内のプログラムは 0.3 秒ごとにも読み直す（#275）。案内のプログラムは `WHATNEXT_ROLE=guide` で起動する（利用者向けのサブコマンドを増やさないため）。
@@ -54,7 +56,7 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 - attach している間のキーの表は一覧の側に置き、tmux の設定に引数で渡す。操作が一覧に戻ってから処理する頼みごとの列挙にも使う。
 - 作業台の画面の案内を描くプログラム（`src/cli/guide.ts`）は、案内のセッションの中で動く起動の口なので cli に置く。
 
-テストから外部を差し替える口は、環境変数（`WHATNEXT_TMUX_SOCKET`、`WHATNEXT_PORT`、`XDG_STATE_HOME`、`CLAUDE_CONFIG_DIR`、偽のコマンドを前に置いた `PATH`）にする。
+テストから外部を差し替える口は、環境変数（`WHATNEXT_TMUX_SOCKET`、`WHATNEXT_PORT`（mod には `WHATNEXT_DIGEST_PORT` で渡る）、`XDG_STATE_HOME`、`CLAUDE_CONFIG_DIR`、偽のコマンドを前に置いた `PATH`）にする。
 `WHATNEXT_DEBUG_LOG` があるときだけ、一覧のプロセスは attach、異常終了などの出来事をそのファイルに書く。テストが失敗の原因を追うための口で、利用者の環境では何も書かない（[ADR-0016](adr/0016-persist-holds-and-waits-in-a-state-file.md) の状態のファイルのほかに書かない方針を保つ）。
 利用者の whatnext と同じマシンでテストを流しても、互いに触れないようにするため。
 
@@ -110,6 +112,7 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 | attach している間の ← の検知 | | | | 主：tmux の `pane_title` |
 | `n` の信頼の確認が済んだか | | | | 主：`~/.claude.json`（読むだけ） |
 | Usage | | | | 主：`claude -p "/usage"` |
+| `◎` Goal、右の欄、`o` の会話リンク（`--digest` のときだけ） | | | | 主：ダイジェストの mod（「ダイジェストの受信」） |
 
 ## 起動元の引き方
 
@@ -155,11 +158,42 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 
 - `n` で起動するセッションには、`--settings` の `env` で OTel の設定を付ける。送信先は、whatnext が `127.0.0.1` で開く受け口にする。metrics は受けない（COST の列のためだけに受けていた）。起動したシェルの環境変数は `--bg` のセッションに届かないので、`--settings` を使う（[claude-code-behavior.md](claude-code-behavior.md)）。
 - whatnext は起動している間だけ受け口を開き、受けた値はメモリにだけ持つ（[ADR-0002](adr/0002-no-writes-no-persistent-state.md)）。常駐する保存先やメトリクス基盤は置かない。
-- 受け口のポートは `127.0.0.1:14318` に固定する。利用者が既存のコレクタを既定の 4318 で動かしていてもぶつからないようにする。**whatnext は同時に1つだけ動かす。** 専用の tmux サーバに一覧がすでにあれば、新しく動かさずにその一覧につなぐ（「一覧と作業台の仕組み」）。それでも受け口を別の whatnext（サーバ名の違う版など）が開いているときは、そのことを英語で示して終了する（終了コード 1）。2つ目の whatnext は受け口を開けず、一言も出さずに黙って動くことになるため。別の whatnext かどうかは、受け口に `GET /v1/whatnext` を送って確かめる。応答は `{"app":"whatnext"}` とし、受ける側は素の文字列の応答も whatnext とみなす。版の違う whatnext（サイクルごとに書き直したもの）が動いていても、二重起動を正しく判定するため。whatnext 以外のプログラムがポートを使っているときは、受け口を開かずに動き、`n` で起動するセッションにもフックと OTel を付けない。付けると、そのセッションは生きている間ずっと、指示と最後の応答の全文を、ポートを使っている別のプログラムに送り続ける。こうして起動したセッションは、外で起動したセッションと同じ扱いになり（一言と待機時間は会話記録で補い、CTX は `-`）、あとで whatnext が受け口を開けても変わらない。エラーは示さない。
+- 受け口のポートは `127.0.0.1:14318` に固定する。利用者が既存のコレクタを既定の 4318 で動かしていてもぶつからないようにする。**whatnext は同時に1つだけ動かす。** 専用の tmux サーバに一覧がすでにあれば、新しく動かさずにその一覧につなぐ（「一覧と作業台の仕組み」）。それでも受け口を別の whatnext（サーバ名の違う版など）が開いているときは、そのことを英語で示して終了する（終了コード 1）。2つ目の whatnext は受け口を開けず、一言も出さずに黙って動くことになるため。別の whatnext かどうかは、受け口に `GET /v1/whatnext` を送って確かめる。応答は `{"app":"whatnext"}` とし、受ける側は素の文字列の応答も whatnext とみなす。版の違う whatnext（サイクルごとに書き直したもの）が動いていても、二重起動を正しく判定するため。whatnext 以外のプログラムがポートを使っているときは、受け口を開かずに動き、`n` で起動するセッションにもフックと OTel を付けない。付けると、そのセッションは生きている間ずっと、指示と最後の応答の全文を、ポートを使っている別のプログラムに送り続ける。こうして起動したセッションは、外で起動したセッションと同じ扱いになり（一言と待機時間は会話記録で補い、CTX は `-`）、あとで whatnext が受け口を開けても変わらない。エラーは示さない。例外は `--digest` で起動したときで、一覧の右の欄の「ダイジェストがない」の文言の代わりに理由（`Digests are off: port <ポート> is used by another program.` など）を出す（「ダイジェストの受信」）。
 - 受けた値の使い道は、CTX の列だけである。
 - OTel は常に受け、オプトインにはしない。受け口をフックと共用しているので、オプトインにしても減る仕組みがなく、起動時のオプションが1つ増えるだけになる。
 - whatnext を終了して起動し直した直後は、CTX は次のターンまで空欄になる（logs は再送されない）。
 - whatnext の外で起動したセッションと対話セッションは OTel を送らないので、CTX は `-` になる。User Story 12 のうち、この列だけは例外になる。会話記録の `message.usage` で補う案は採らない（[ADR-0011](adr/0011-fill-in-from-transcripts-when-hooks-are-missing.md)）。空欄が困るようになったら、利用者が `~/.claude/settings.json` の `env` に自分で OTel の設定を書く経路を検討する。これは「書き換えを求める別ツールも前提にしない」（[ADR-0002](adr/0002-no-writes-no-persistent-state.md)）を「利用者が任意で設定すれば値が出る」に緩める判断になる。この経路で `--bg` に届くかは未確認（[claude-code-behavior.md](claude-code-behavior.md)）。
+
+## ダイジェストの mod
+
+判断は [ADR-0022](adr/0022-ship-a-digest-mod-for-launched-sessions.md) にある。観測できる振る舞いは [PRODUCT.md](PRODUCT.md)「ダイジェスト（`--digest`）」にある。
+
+- mod はリポジトリの根の `mod/`（永続層）にあり、`.claude-plugin/plugin.json`、`hooks/hooks.json`、`hooks/register.tsx`（イベントとペイン）、`hooks/digest.ts`（ダイジェストを作る指示と、送る本文）、`hooks/links.ts`（会話リンクを拾う規則）、`types/index.d.ts`（`$.state` の型）からなる。`.tsx` のまま npm の配布物に入れる（`package.json` の `files`）。
+- 付け方：`--digest` で起動した一覧は、受け口を開けたときだけ、`n` の `claude --bg` に `--plugin-dir <パッケージの根>/mod` を足し、`--settings` の `env` に `WHATNEXT_DIGEST_PORT=<受け口のポート>` を足す（`launchSettings` の JSON に、`src/` の側で足す）。mod はこの変数を `$.env.get` で読み、なければ 14318 に送る（受け手の確かめに使う `WHATNEXT_DIGEST_TMUX` と `WHATNEXT_DIGEST_SOCKET` も同じく足す。下の「受け手の確かめ」）。`--digest` の有無は、起動の口が一覧のペインに `WHATNEXT_DIGEST=1` で渡し、一覧が専用サーバのオプション `@wn_digest` に置く。動いている一覧につなぐ `whatnext --digest` は、`@wn_digest` がなければ `@wn_digest_wanted` を置き、一覧が知らせを出す。
+- ダイジェスト：`turn.complete`（本体のループだけ。サブエージェントは除く）で、前のダイジェスト、利用者の指示（`$.session.messages` の利用者の行から、CONTEXT.md の **指示** に当たるものだけを採る。最新の10件。`hooks/digest.ts` の `instructionsOf`）、最後の応答（中断などで応答でなく終わったターンは空）を Haiku に渡し、`{"goal", "progress", "next"}` の JSON を受ける（`$.model.complete`、`effort: low`、45 秒で打ち切る）。書く言語は mod が指示から決め、入力の末尾の `## Language` で名指しする（`hooks/digest.ts` の `languageOf`）。かなを含む指示は日本語、文字がすべてラテン文字の指示は英語とし（コード、URL、スラッシュコマンドの名前は数えない）、渡す指示の多いほうを採り、同数なら新しいほうを採る。どちらでもなければ「指示と同じ言語。日本語なら日本語、英語なら英語」と例つきで頼む。前のダイジェストが別の言語なら訳させる。「the language the user writes in」とだけ頼んでいたときは、英語の指示に Haiku がロシア語で返した（実機、2026-11-21）。直したあと、英語の指示に応答が日本語で返ったセッションでも、ダイジェストは英語で届いた（2.1.330、2026-11-21、1回）。指示に当たらない行は、2.1.330 の `$.session.messages()` で観測した形で除く。道具の結果を持つ行、中断の印（本文がちょうど `[Request interrupted by user]` か `[Request interrupted by user for tool use]`）、手元で完結するコマンドの行（`<command-name>` で始まる。`/model`、`/compact`）とその出力（`<local-command-stdout>` で始まる）、compact の要約（`This session is being continued from a previous conversation that ran out of context.` で始まる）。ターンを始めるスラッシュコマンドの行は `<command-message>` で始まり、`<command-name>` と `<command-args>` から `/名前 引数` を作る。mod が登録したコマンド（`wn-digest`）は会話記録では `system` の `local_command` で、`$.session.messages()` に出ない。どれも公開された形ではないので、Claude Code を更新したら見直す（checking-claude-cli）。ターンの終わりは待たせない。前の呼び出しより後に頼んだ呼び出しがあれば、前の答えは捨てる。読めなかったときは前のダイジェストを残す。
+- 会話リンク：session-timeline 0.5.0 の `links.ts` と規則を移した（会話の言葉と、値が URL そのものの道具の引数から拾う。道具の出力とファイルに書く中身からは拾わない。GitHub の issue、PR、コミットは番号で1件にまとめる。Markdown のリンクの文言を名前に使う）。`turn.start`、`turn.step`、`tool.call`、`turn.complete` で拾い、`session.start` で会話の履歴から拾い直す（再開したセッション）。新しく言われたものを先に、40 件まで持つ。
+- 受け手の確かめ：`turn.complete` で Haiku を呼ぶ前に、`--digest` の whatnext がダイジェストを受けているかを確かめ、受けていなければ呼ばずに何も送らない（会話リンクは拾ってペインに出す）。確かめ方は、whatnext の専用サーバの一覧のセッション `list` のオプション `@wn_digest_port`（`DIGEST_LIVE`。セッションのオプション）を `$.process.run` の `tmux -S <ソケット> show-options -t =list: -qv @wn_digest_port` で読み、値が mod の送り先のポートと同じなら受けているとみなす。一覧は、`--digest` で受け口を開けて mod を付けるときだけ、このオプションに受け口のポートを置く。whatnext を終了するとサーバごと消え、`--digest` なしで起動し直すとオプションがなく、別のポートで受けているとポートが違うので、どれも呼ばない。サーバ全体のオプションにしないのは、一覧が異常終了したとき（シグナル、SIGKILL）に、作業台で動いているもののためにサーバが残るから。一覧のセッションは一覧のプロセスと一緒に消えるので、どの終わり方でも受けていないと読める。tmux を動かせない、時間切れ（5 秒）なども呼ばない側に倒す。`--settings` の `env` に、`WHATNEXT_DIGEST_TMUX`（一覧の `PATH` で見つけた tmux の絶対パス。`claude --bg` のセッションの `PATH` に tmux があるとは限らない）と `WHATNEXT_DIGEST_SOCKET`（専用サーバのソケットの絶対パス。`#{socket_path}`。`TMUX_TMPDIR` の違いに左右されない）を足す。ソケットの変数がなければ `-L whatnext`、tmux の変数がなければ `tmux` を使う。
+  - 受け口に「受けているか」を答える口を足す案は採らなかった。lib の受け口（`openReceiver`、`probe`）の応答は lib が決め、`src/` の `DigestHookStore` は本文を受けるだけで応答を変えられないので、lib の契約を変えることになる。一覧のセッションのオプションは一覧（`src/`）が置けて、版の違う whatnext が同じソケット名で起動し直しても読める。一覧のセッションは一覧のプロセスと一緒に消えるので、異常終了しても古い値は残らない。
+  - 確かめたこと（2.1.330、tmux 3.8、2026-11-21、1回）：実際の `claude --bg --plugin-dir <mod>` で、専用サーバがないとき（`tmux` が 1 で終わる）、サーバはあるがオプションがないとき、オプションのポートが違うときは、デバッグのログに `$.model.complete` がなく、受け口に何も届かなかった。オプションに送り先のポートを置くと、次のターンの終わりに Haiku を呼び（約 1 秒）、ダイジェストと会話リンクが届いた。`$.process.run` の tmux は約 6ms で終わった。
+- 送る：ダイジェストを作ったあと（作れなかったときも）、`$.http.fetch` で受け口の `/v1/hooks` に POST する（「ダイジェストの受信」）。送れなくても何も出さない。
+- ペイン：`session.start` で `$.ui.open({id: 'whatnext-digest', title: 'Digest', columns: 46})` を呼ぶ。Claude Code は、頼まれずに開いたペインを端末が 144 桁以上（一度手で開けば 110 桁以上）のときだけ置き、110 桁以上なら右の dock、それより狭いと Claude Code の入力欄の上に置く（2.1.329 で確かめた。位置を指定する引数はない）。`/wn-digest` で開ける（`wn-` を付けるのは、組み込みのコマンドやほかの mod のコマンドとぶつけないため。`/recap` は組み込みにある）。見出しは一覧の右の欄と同じ `Goal` `Progress` `Next` `Links` で、会話リンクは8件まで出して押すと開く。
+- 書き方の罠（2.1.329）：`$` を渡す関数はファイルの先頭で宣言しないと `claude plugin validate` が通らない。`tool.call` と `command.run` の hook には `.catch` が要る（付けないと validate が警告する）。mod の値は `$.state`（そのセッションの）に持ち、読み直したあとも残る。
+- テスト：`mod/tests/*.test.tsx` を `npm run test:mod`（`claude plugin validate mod` と `claude plugin test mod`）で流す。Claude Code の振る舞いは、テストの `on` の hook が代わりに答える。型の確かめは、plugin-authoring スキルの型の宣言を含めた tsconfig を mod の外に置いて `tsc -p` で行う（Claude Code が mod を読み込むと、書ける置き場所の mod に `.claude-plugin/types/` と `tsconfig.json` を書く。`.gitignore` で外す）。
+- 確かめたこと（2.1.329、2026-11-20）：`claude --bg --plugin-dir <mod>` で mod が動き、ターンの終わりから約 0.8 秒でダイジェストが受け口に届いた。作業場所の外の、読み取りだけのパスでも読み込めた。信頼していない作業場所では `--bg` が起動を断る（今の `n` の信頼の流れのまま）。ほかの mod のペインがあると、タブで並び、そちらが前に出たままのことがある。`◎` は tmux でも `string-width` でも1桁だった（`→` と同じ）。
+- 確かめたこと（whatnext を通した通し、2.1.329、2026-11-21、1回）：`whatnext --digest` の `n` で起動したセッションに mod が付き、`--settings` の `env` で渡した `WHATNEXT_DIGEST_PORT` を mod が読み、送ったダイジェストの `session_id` が `--json` の `sessionId` と一致して、一覧の `◎` の行と右の欄に出た。権限の確認で断って中断したターンでは、ダイジェストを作らずに会話リンクだけが届いた。端末 150 桁では、mod のペインが右の dock に出たが、利用者の session-timeline のペインとタブで並び、session-timeline が前に出たままだった。開いているペインに `/wn-digest` を打っても、前には出なかった。
+
+## ダイジェストの受信
+
+- mod は、今の受け口（`127.0.0.1:<ポート>`）の `/v1/hooks` に、フックと同じ口で次の本文を送る。`{"hook_event_name": "WhatnextDigest", "session_id": <sessionId>, "digest": {"goal", "progress", "next"} | null, "links": [{"label", "href"}, …]}`。`digest` が `null` なのは、まだ一度もダイジェストを作れていないときである。作れなかった回は、前のダイジェストをそのまま送る。`links` は新しいものから20件まで。この形は版の違う whatnext と mod の間の契約なので、変えるときは両方を読める形にする。`WhatnextDigest` は、ダイジェストの mod（`whatnext-digest`）が送る本文であることを表す名前で、中身はダイジェストと会話リンクを別の項目に並べる（会話リンクはダイジェストの一部ではない）。
+- lib の受け口（`openReceiver`）は、`/v1/hooks` の本文を `HookStore.receiveHook` に渡す。一覧は `HookStore` を継いだ `DigestHookStore`（`src/input/digest.ts`）を渡し、`hook_event_name` が `WhatnextDigest` の本文だけを手前で抜き取り、ほかは lib に渡す。lib の受け口と契約は変えない。別の口（`/v1/digest`）を足す案は、lib を直すことになるので採らなかった。
+- 受けた値はメモリにだけ持つ（[ADR-0002](adr/0002-no-writes-no-persistent-state.md)）。セッションごとに最後に受けたものだけを持ち、`digest` が `null` の回は前のダイジェストを残して会話リンクだけを替える。`--json` から消えたセッションの値は、フックの値と同じく更新のたびに捨てる（`forget`）。
+- `--digest` で起動して受け口を開けなかったとき（`probe` が `free` でない、または `openReceiver` が `null`）は、一覧の起動（`src/cli/list.ts` の `digestOffText`）が理由の文言を作り、`Ports.digestOff` で一覧に渡す。右の欄は、ダイジェストのない行の文言の代わりにこれを出す。文言は `probe` の答えで分ける（`other`：`is used by another program`、`whatnext`：`is used by another whatnext`、`free` なのに開けなかった：`could not open port`）。受け口を開けなければ mod を付けず、ダイジェストは届かないので、どの行でも理由が出る。シナリオ 41 の「エラーを示さない」の、`--digest` のときだけの例外である（PRODUCT.md「ダイジェスト（`--digest`）」）。
+- `--digest` なしで起動した一覧は、ダイジェストの本文を捨てる（前に `--digest` で起動した whatnext の mod を付けたセッションが送ってきても、出さない）。
+- 受け口にはローカルのどのプロセスからも送れるので、受けたときに制御文字（改行とタブを含む）を除き、長さを切る（Goal 200 字、Progress 400 字、Next 300 字、会話リンクの名前 200 字）。会話リンクは `http://` か `https://` で始まり空白を含まないものだけを受ける（`o` で `open` に渡すため）。
+- 一覧は、受けた値を更新のとき（`Observer.observe`）に写し取り、更新と更新の間は変えない（一言と同じ）。段にも並びにも使わない。
+- 右の欄の描画は画面の組み立て（`src/screen/screen.ts` の `render` と `sideLines`）が行う。端末の幅が 120 桁以上のとき、一覧を `幅 - 49` 桁で組み立て、右に ` │ ` と 46 桁の欄を並べる。最下部の欄は全幅のまま出す。メモの入力欄と一覧の下の欄（入力欄・メニュー・知らせ）は全幅で切り、どれかの行が左の幅を超えるときは、その欄（前の空行を含む）から下に右の欄を並べない。収まる欄の横には今までどおり右の欄を並べる（60秒ごとの `refreshing...` で右の欄が縮まないように）。折り返しは表示幅で数え、英数字の語の途中では折らず（語の頭で折る）、句読点と閉じ括弧を行の頭に置かない。
+- 右の欄の `Links` の行は、名前を欄の幅で切ってから、埋め込みのリンク（OSC 8。`ESC ]8;;<URL> ESC \ <名前> ESC ]8;; ESC \`）で囲む（`src/screen/screen.ts` の `hyperlink`）。幅を数えたり切ったりするのは囲む前の文字列で、囲んだあとの行は数えない（`string-width` は OSC 8 を 0 桁に数えるが、lib の `stripAnsi` は OSC 8 を除かない）。URL は受け口で検査したもの（`http://` か `https://` で始まり空白を含まない。制御文字は受けたときに除いてある）で、描くときも、制御文字や空白を含むもの、http(s) でないものは囲まずに名前だけを出す。`o` のメニューは残す。
+- 外側の端末に OSC 8 を送るかは、attach した claude の画面と同じく tmux が決める（「一覧と作業台の仕組み」の `terminal-features`）。一覧は端末の種類を見ずに常に囲む。tmux は送るとき、リンクに `id=tmux<n>` を足す。確かめたこと（tmux 3.8、2026-11-21）：問い合わせに答えない pty（`script`）で attach すると、`TERM` が `xterm-256color` と `xterm-ghostty` のクライアントには OSC 8 が届き、`vt220` と `screen` には届かず名前だけが出た。外側が tmux のとき（画面の通しのテスト）は、`TERM=screen` でも、tmux が問い合わせの応答から外側を tmux と知って `hyperlinks` を付け、送った。PRODUCT.md の「xterm 系と Ghostty に限る」は `terminal-features` で入れる範囲で、tmux が応答から機能を知る端末には、それ以外にも送る。
 
 ## 会話記録の読み取り
 
@@ -319,7 +353,7 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 | 38 | 画面の通し |
 | 39 | 単体 |
 | 40 | 画面の通し |
-| 41 | 実機の通し |
+| 41 | 実機の通し。`--digest` のときの右の欄の理由は画面の通し（`test/e2e/digest.test.ts`。python の `http.server` でポートをふさぐ） |
 | 42 | 画面の通し |
 | 43 | 画面の通し |
 | 44 | 画面の通し |
@@ -356,6 +390,8 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 | 77 | 実機の通し、単体 |
 | 78 | 単体（`lib/input`）、画面の通し |
 | 79 | 画面の通し、単体（`lib/tmux` の `pane-died` の案内のペインの扱い、`test/unit/` の Ghostty の分割に打ち込む文字列）。Ghostty の実機の分割は確かめていない |
+| 80〜82、84〜86 | 画面の通し（`test/e2e/digest.test.ts`。mod の代わりにテストが受け口へダイジェストを送る）、単体（`test/unit/digest.test.ts`） |
+| 83 | mod のテスト（`npm run test:mod`）、画面の通し（`--plugin-dir` と `WHATNEXT_DIGEST_PORT` を付けること）。実機の `claude --bg` で mod が動き、ダイジェストが届くことは、実装のときに1回確かめた |
 
 画面の通しは、外側の tmux のセッションを端末の代わりにし、偽の `claude`、`ps`、`gh`、`ghq`、`open`(`test/e2e/fake/`)を `PATH` の前に置く。偽の claude は状態を一時ディレクトリの `agents.json` に持ち、呼ばれたコマンドを `calls.log` に書き、`fake.json` と行の `_fake` で失敗や遅れを起こす。偽の `ps` は、起動元を引く2つの読み方(`ps -A -o pid=,ppid=` と `ps -E`)だけを固定の表で返し、ほかは本物に渡す。外側の tmux を挟むと Esc が約 500ms 遅れて届くので、harness は Esc のあとに待つ(#278)。実機の通しは `/tmp/whatnext-real`(git でない。初回に対話モードの claude で信頼の確認を済ませる)で haiku のセッションを起動し、テストのあとにそのディレクトリのセッションだけを `claude stop` と `claude rm` で消す。Claude Code の中のシェルから流すときは、`CLAUDE_CODE_CHILD_SESSION` などを外してから claude を動かす(引き継ぐと対話セッションが `--json` に出ない。#284)。子の `claude -p` には道具を使わない長い出力を頼む(利用者のフックが前景の `sleep` を止めると、子がすぐ終わる。#285)。Ghostty の通しは、AppleScript で新しいウィンドウを開き、`ctrl+q` の組み合わせだけを Ghostty の `send key` で送る(修飾キーのない文字は `send key` では届かず、`input text` は貼り付けとして届くため、一覧への文字キーは tmux の `send-keys` で一覧のペインに送る)。AppleScript の中では `tab` が Ghostty のタブの class と紛れるので、区切りの文字は `character id 9` と書く。
 

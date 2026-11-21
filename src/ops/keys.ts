@@ -32,3 +32,7 @@ export const GUIDE_CREATE = 'wbcreate';
 
 export const LIST_KEYS_HELP =
   '↑↓ select · Enter attach · n new · ^X stop/delete · e note · f wait for · w/t workbench · v VS Code · r refresh · q quit';
+
+/** `--digest` のときのキーの説明(`o` で会話リンクを開く)。 */
+export const DIGEST_KEYS_HELP =
+  '↑↓ select · Enter attach · n new · ^X stop/delete · e note · f wait for · w/t workbench · v VS Code · o links · r refresh · q quit';

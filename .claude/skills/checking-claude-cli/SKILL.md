@@ -23,6 +23,12 @@ node .claude/skills/checking-claude-cli/check-agents-json.mjs
 - 権限待ちの行を1つ作り(下の方法)、`~/.claude/projects/*/<sessionId>.jsonl` の末尾に、指示の `user` の行(`message.content` が文字列)と、結果のない `tool_use` の `assistant` の行があるかを見る。続けて `working` → `done` の行を作り、`assistant` の `text` とターンの終わりの `system` の行があるかを見る。
 - 違っていたら、節と ADR-0011 の「依存する範囲」を直し、`learning` の issue を起票する。
 
+## ダイジェストの mod を確かめる(同じとき。ADR-0022)
+- mod の API は早期公開版で、リリースの間で変わりうる。`npm run test:mod`(`claude plugin validate mod` と `claude plugin test mod`)を流し、警告とテストの失敗を見る。
+- 型が変わっていないかは、plugin-authoring スキルを読み込んで書かれる `types/claude-code.d.ts` を include した tsconfig を mod の外に置き、`npx tsc -p <その tsconfig>` で確かめる(DESIGN.md「ダイジェストの mod」)。
+- 実機では1回だけ: mod は、whatnext の専用サーバの一覧のセッション `list` のオプション `@wn_digest_port` が送り先のポートと同じときだけ Haiku を呼ぶ(DESIGN.md「ダイジェストの mod」の受け手の確かめ)。そのため、先に専用のソケットで tmux のサーバを `list` のセッションで立て、オプションを置く(`tmux -L <名前> new-session -d -s list` と `tmux -L <名前> set-option -t =list: @wn_digest_port <空きのポート>`。ソケットのパスは `tmux -L <名前> display -p '#{socket_path}'`)。そのポートで POST を書き留める小さな受け口を立て、信頼済みの作業場所で `claude --bg --model haiku --plugin-dir <リポジトリ>/mod --settings '{"env":{"WHATNEXT_DIGEST_PORT":"<空きのポート>","WHATNEXT_DIGEST_TMUX":"<tmux の絶対パス>","WHATNEXT_DIGEST_SOCKET":"<ソケットのパス>"}}' -- "hello と返して"` を起動して、`WhatnextDigest` の本文が届くかを見る。届かなければ、`claude --debug` のログで mod の読み込みと hook の失敗、受け手の確かめの skip の行を探す。片付けは下と同じに加え、tmux のサーバを `kill-server` で止める。
+- 違っていたら、mod と DESIGN.md「ダイジェストの mod」を直し、`learning` の issue を起票する。
+
 ## 状態ごとの行を安く作る(2.1.281 で確認)
 リポジトリ本体(信頼済みのディレクトリ)で起動する。`claude --bg --help` はヘルプを出さずにセッションを起動するので使わない。
 - `blocked` + `idle`(プロンプトなし): `claude --bg --name probe-idle`。API を呼ばない。

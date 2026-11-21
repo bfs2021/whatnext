@@ -276,6 +276,11 @@ export class Harness {
     return this.tmux('capture-pane', '-p', '-t', `=${session}:`);
   }
 
+  /** 色や埋め込みのリンク(OSC 8)の列を含めて取る(端末に届いたもの)。 */
+  screenWithEscapes(session = 'main'): string {
+    return this.tmux('capture-pane', '-e', '-p', '-t', `=${session}:`);
+  }
+
   lines(session = 'main'): string[] {
     return this.screen(session).replace(/\n$/, '').split('\n');
   }

@@ -1,20 +1,21 @@
-import {appendFileSync} from 'node:fs';
+import {accessSync, appendFileSync, constants} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {emitKeypressEvents} from 'node:readline';
 import {fetchUsage} from '../../lib/input/claude.js';
 import {run} from '../../lib/input/exec.js';
-import {HookStore} from '../../lib/input/hooks.js';
 import {launchSettings, openReceiver, probe} from '../../lib/input/receiver.js';
 import {Transcripts} from '../../lib/input/transcript.js';
 import {LIST, serverConfig, Tmux} from '../../lib/tmux/tmux.js';
+import {DigestHookStore} from '../input/digest.js';
 import {Observer} from '../input/observe.js';
 import {Locations, Prs} from '../input/where.js';
 import {App} from '../ops/app.js';
 import {startGuide} from '../ops/guide-session.js';
 import {ATTACH_KEYS, ATTACH_KEYS_HELP} from '../ops/keys.js';
+import {DIGEST_LIVE, DIGEST_ON} from '../ops/names.js';
 import {StateFile, statePath} from '../state/state.js';
-import {type Env, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
+import {type Env, modDir, paneCommand, tmuxEnv, workbenchCommand} from './env.js';
 
 // 一覧の役(専用の tmux サーバのセッション `list` の中で動く)。本物の口を差し込んで App を動かす。
 
@@ -38,14 +39,23 @@ export async function startList(env: Env): Promise<number> {
     ? join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
     : join(homedir(), '.claude.json');
 
-  const hooks = new HookStore();
+  const hooks = new DigestHookStore(env.digest);
   let settings: string | undefined;
+  let pluginDir: string | undefined;
   const occupant = await probe(env.port);
   if (occupant === 'free') {
     const rec = await openReceiver(env.port, hooks);
-    if (rec) settings = launchSettings(env.port);
+    if (rec) {
+      settings = launchSettings(env.port);
+      // ダイジェストの mod は、受け口を開けたときだけ付ける(フックと同じ。DESIGN.md「ダイジェストの mod」)
+      if (env.digest) pluginDir = modDir();
+    }
   }
-  log(`start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'}`);
+  // --digest で受け口を開けなかったときは、右の欄にその理由を出す(シナリオ 41 の「エラーを示さない」の、--digest のときだけの例外)
+  const digestOff = env.digest && !settings ? digestOffText(occupant, env.port) : undefined;
+  log(
+    `start ${env.version} port=${env.port} occupant=${occupant} receiver=${settings ? 'open' : 'none'} digest=${env.digest}`,
+  );
 
   const r = await tmux.sourceConfig(
     serverConfig({
@@ -63,6 +73,20 @@ export async function startList(env: Env): Promise<number> {
   );
   if (r.code !== 0) log(`sourceConfig failed: ${r.stderr}`);
   await tmux.t(['set', '-w', '-t', `=${LIST}:`, 'remain-on-exit', 'off']);
+  if (env.digest) await tmux.setOption(DIGEST_ON, '1');
+  else await tmux.unsetOption(DIGEST_ON);
+  // mod が「ダイジェストを受けているか」を確かめる口(受け口を開けて mod を付けるときだけ置く)
+  if (settings && pluginDir) {
+    const sock = (await tmux.t(['display-message', '-p', '-t', `=${LIST}:`, '#{socket_path}'])).stdout.trim();
+    settings = withDigestEnv(settings, {
+      WHATNEXT_DIGEST_PORT: String(env.port),
+      WHATNEXT_DIGEST_TMUX: findTmux(),
+      ...(sock ? {WHATNEXT_DIGEST_SOCKET: sock} : {}),
+    });
+    // 一覧のセッションのオプションに置く。一覧のプロセスがどう終わっても(シグナル、SIGKILL)一覧のセッションごと消え、
+    // 作業台のためにサーバが残っても、mod は受けていないと読む
+    await tmux.t(['set', '-t', `=${LIST}:`, DIGEST_LIVE, String(env.port)]);
+  }
   const guideCommand = paneCommand(env, 'guide');
   await startGuide(tmux, guideCommand, homedir());
 
@@ -70,7 +94,7 @@ export async function startList(env: Env): Promise<number> {
   const app_ = new App({
     run: runT,
     tmux,
-    observer: new Observer(runT, hooks, transcripts),
+    observer: new Observer(runT, hooks, transcripts, Date.now, env.digest ? hooks : undefined),
     locations: new Locations(runT),
     prs: new Prs(runT),
     transcripts,
@@ -81,6 +105,9 @@ export async function startList(env: Env): Promise<number> {
     write: s => process.stdout.write(s),
     size: () => ({cols: process.stdout.columns || 80, rows: process.stdout.rows || 24}),
     settings,
+    pluginDir,
+    digest: env.digest,
+    digestOff,
     socket: env.socket,
     port: env.port,
     version: env.version,
@@ -120,4 +147,35 @@ export async function startList(env: Env): Promise<number> {
 
   await app_.start();
   return await new Promise<number>(() => {});
+}
+
+/** `--settings` の JSON の `env` に、ダイジェストの mod が読む値(送る先のポート、受けているかを確かめる tmux)を足す。 */
+export function withDigestEnv(settings: string, add: Record<string, string>): string {
+  try {
+    const j = JSON.parse(settings) as {env?: Record<string, string>};
+    j.env = {...(j.env ?? {}), ...add};
+    return JSON.stringify(j);
+  } catch {
+    return settings;
+  }
+}
+
+/** tmux の実行ファイルの絶対パス(`claude --bg` のセッションの PATH に tmux があるとは限らない)。なければ `tmux`。 */
+export function findTmux(path = process.env.PATH ?? ''): string {
+  for (const dir of path.split(':')) {
+    if (!dir) continue;
+    const p = join(dir, 'tmux');
+    try {
+      accessSync(p, constants.X_OK);
+      return p;
+    } catch {}
+  }
+  return 'tmux';
+}
+
+/** 受け口を開けなかった理由の文言(右の欄。`--digest` のときだけ)。 */
+export function digestOffText(occupant: 'free' | 'whatnext' | 'other', port: number): string {
+  if (occupant === 'other') return `Digests are off: port ${port} is used by another program.`;
+  if (occupant === 'whatnext') return `Digests are off: port ${port} is used by another whatnext.`;
+  return `Digests are off: could not open port ${port}.`;
 }
