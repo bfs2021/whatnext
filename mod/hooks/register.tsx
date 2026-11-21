@@ -2,7 +2,7 @@ import type {EngineInterface, Register} from 'claude-code';
 import {atom, read, update} from 'claude-code';
 
 import type {Digest, FoundLink} from '../types';
-import {DIGEST_SYSTEM, digestBody, digestPrompt, nameOf, parseDigest, promptsOf} from './digest';
+import {DIGEST_SYSTEM, digestBody, digestPrompt, instructionsOf, nameOf, parseDigest} from './digest';
 import type {Mention} from './links';
 import {addLinks, mentionsOf, NOT_ARGUMENTS, toolMentions} from './links';
 
@@ -74,14 +74,14 @@ async function noteLinks($: EngineInterface, mentions: readonly Mention[]): Prom
 async function writeDigest($: EngineInterface, answer: string): Promise<void> {
   const mine = ++asked;
   const messages = await $.session.messages().catch(() => undefined);
-  const prompts = Array.isArray(messages) ? promptsOf(messages) : [];
+  const instructions = Array.isArray(messages) ? instructionsOf(messages) : [];
   const prev = await read($, digest);
-  if (prompts.length > 0 || answer) {
+  if (instructions.length > 0 || answer) {
     $.ui.log('whatnext-digest: asking the model for a digest', {to: 'debug'});
     const r = await $.model.complete({
       model: 'haiku',
       system: DIGEST_SYSTEM,
-      prompt: digestPrompt(prev, prompts, answer),
+      prompt: digestPrompt(prev, instructions, answer),
       maxTokens: 400,
       effort: 'low',
       timeoutMs: 45000,

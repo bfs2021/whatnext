@@ -1,7 +1,7 @@
 import type {On, SessionMessage} from 'claude-code';
 import type {Engine} from 'claude-code/testing';
 import {expect, test} from 'claude-code/testing';
-import {DIGEST_SYSTEM, digestPrompt, languageOf, languageOfOne, parseDigest} from '../hooks/digest';
+import {DIGEST_SYSTEM, digestPrompt, instructionsOf, languageOf, languageOfOne, parseDigest} from '../hooks/digest';
 import {addLinks, linkOf, urlsIn} from '../hooks/links';
 
 // Run with `npm run test:mod` (`claude plugin test mod`). The engine's hooks below stand for Claude Code.
@@ -88,9 +88,9 @@ async function turn($: Engine, prompt: string, answer: string, id = 't1'): Promi
 }
 
 test('at a turn end the digest and the links go to whatnext, on the port whatnext gave', async ($, on) => {
-  const prompts: SessionMessage[] = [{role: 'user', text: 'ログイン画面の二重送信を直して', toolUses: []}];
+  const instructions: SessionMessage[] = [{role: 'user', text: 'ログイン画面の二重送信を直して', toolUses: []}];
   const posted = engine(on, {
-    history: () => prompts,
+    history: () => instructions,
     port: '14555',
     answer: '{"goal": "ログイン画面の二重送信を直す", "progress": "ボタンを無効にした", "next": "レビューを待つ"}',
   });
@@ -213,6 +213,75 @@ test('the input names the language to write in, and the system prompt points to 
   expect(digestPrompt(null, ['Исправь ошибку'], '').split('\n').at(-1)).toBe(
     "Write goal, progress and next in the language of the person's instructions above: in Japanese if they are in Japanese, in English if they are in English. Never use a language they are not written in.",
   );
+});
+
+// What is not an instruction (CONTEXT.md "指示"), in the shapes `$.session.messages()` gave on Claude Code 2.1.330:
+// a turn interrupted with Esc and one interrupted at a permission prompt, `/model haiku`, a plugin's slash command,
+// and `/compact`.
+const OBSERVED: SessionMessage[] = [
+  {role: 'user', text: '認証をトークン方式へ移して', toolUses: []},
+  {role: 'assistant', text: '# 移行の計画\n\n途中まで', toolUses: []},
+  {role: 'user', text: '[Request interrupted by user]', toolUses: []},
+  {role: 'user', text: 'admin 配下も', toolUses: []},
+  {role: 'assistant', text: '', toolUses: [{} as never]},
+  {role: 'user', text: '', toolUses: [], toolResults: [{} as never]},
+  {role: 'user', text: '[Request interrupted by user for tool use]', toolUses: []},
+  {
+    role: 'user',
+    text: '<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>haiku</command-args>',
+    toolUses: [],
+  },
+  {
+    role: 'user',
+    text: '<local-command-stdout>Set model to `Haiku 5.5` and saved as your default for new sessions</local-command-stdout>',
+    toolUses: [],
+  },
+  {
+    role: 'user',
+    text: '<command-message>review</command-message>\n<command-name>/review</command-name>\n<command-args>PR 58 を見て</command-args>',
+    toolUses: [],
+  },
+  {
+    role: 'user',
+    text: 'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary: the user asked to move the authentication to tokens.',
+    toolUses: [],
+  },
+  {
+    role: 'user',
+    text: '<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>',
+    toolUses: [],
+  },
+  {
+    role: 'user',
+    text: '<local-command-stdout>\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m</local-command-stdout>',
+    toolUses: [],
+  },
+  {role: 'user', text: '<command-message>probe</command-message>\n<command-name>/probe</command-name>', toolUses: []},
+];
+
+test('interrupt marks, local commands and their output, and the compact summary are not instructions; a slash command is /name args', () => {
+  expect(instructionsOf(OBSERVED)).toEqual([
+    '認証をトークン方式へ移して',
+    'admin 配下も',
+    '/review PR 58 を見て',
+    '/probe',
+  ]);
+});
+
+test('only the instructions go to the model and name the language: English marks do not turn a Japanese digest English', async ($, on) => {
+  const asks: string[] = [];
+  engine(on, {history: () => OBSERVED, asks, answer: '{"goal": "G", "progress": "N", "next": "X"}'});
+  await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
+  await turn($, 'x', 'ok');
+  const ask = asks.at(-1) ?? '';
+  const part = ask.split("## The person's instructions (oldest first)\n")[1]?.split('\n\n')[0] ?? '';
+  expect(part.split('\n')).toEqual([
+    '- 認証をトークン方式へ移して',
+    '- admin 配下も',
+    '- /review PR 58 を見て',
+    '- /probe',
+  ]);
+  expect(ask).toContain('## Language\nWrite goal, progress and next in Japanese');
 });
 
 // The link rules, moved with links.ts from session-timeline.

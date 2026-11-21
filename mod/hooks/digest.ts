@@ -13,18 +13,40 @@ Write every value in the language the "## Language" part of the input names, inc
 {"goal": "at most 40 characters", "progress": "at most 100 characters", "next": "at most 60 characters"}`;
 
 /** How many instructions the model reads, newest last. */
-export const PROMPTS = 10;
+export const INSTRUCTIONS = 10;
 /** How many links go to whatnext, newest first. */
 export const SENT_LINKS = 20;
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** The person's instructions: user messages that carry words and no tool results. */
-export function promptsOf(messages: readonly SessionMessage[]): string[] {
+// The user messages that are not instructions, in the shapes `$.session.messages()` gives them (Claude Code
+// 2.1.330): the marks of an interrupted turn, a command that runs in Claude Code and starts no turn (`/model`,
+// `/compact`), what it printed, and the summary a compaction writes.
+const INTERRUPTED = /^\[Request interrupted by user( for tool use)?\]$/;
+const LOCAL_COMMAND = /^<command-name>/;
+const LOCAL_OUTPUT = /^<local-command-stdout>/;
+const COMPACT_SUMMARY = /^This session is being continued from a previous conversation that ran out of context\./;
+/** A turn started with a slash command: `<command-message>` first, then its name and arguments. */
+const SLASH_COMMAND =
+  /^<command-message>[\s\S]*?<command-name>([^<]*)<\/command-name>(?:[\s\S]*?<command-args>([\s\S]*?)<\/command-args>)?/;
+
+/** One user message as the person's instruction; undefined when it is none. A slash command's turn is `/name args`. */
+export function instructionOf(m: SessionMessage): string | undefined {
+  if (m.role !== 'user' || (m.toolResults?.length ?? 0) > 0) return undefined;
+  const text = m.text.trim();
+  if (!text || INTERRUPTED.test(text) || LOCAL_COMMAND.test(text) || LOCAL_OUTPUT.test(text)) return undefined;
+  if (COMPACT_SUMMARY.test(text)) return undefined;
+  const slash = text.match(SLASH_COMMAND);
+  if (slash) return `${(slash[1] ?? '').trim()} ${(slash[2] ?? '').trim()}`.trim() || undefined;
+  return m.text;
+}
+
+/** The person's instructions, the newest `INSTRUCTIONS` of them. */
+export function instructionsOf(messages: readonly SessionMessage[]): string[] {
   return messages
-    .filter(m => m.role === 'user' && (m.toolResults?.length ?? 0) === 0 && m.text.trim() !== '')
-    .map(m => m.text)
-    .slice(-PROMPTS);
+    .map(instructionOf)
+    .filter((t): t is string => t !== undefined)
+    .slice(-INSTRUCTIONS);
 }
 
 export type Language = 'Japanese' | 'English';
@@ -49,10 +71,10 @@ export function languageOfOne(text: string): Language | undefined {
  * The language of the person's instructions: the one most of them are in; on a tie, the newest one's.
  * Undefined when none is in Japanese or English.
  */
-export function languageOf(prompts: readonly string[]): Language | undefined {
+export function languageOf(instructions: readonly string[]): Language | undefined {
   const count = {Japanese: 0, English: 0};
   let newest: Language | undefined;
-  for (const p of prompts) {
+  for (const p of instructions) {
     const l = languageOfOne(p);
     if (!l) continue;
     count[l]++;
@@ -70,13 +92,13 @@ export function languageLine(language: Language | undefined): string {
   return "Write goal, progress and next in the language of the person's instructions above: in Japanese if they are in Japanese, in English if they are in English. Never use a language they are not written in.";
 }
 
-export function digestPrompt(prev: Digest, prompts: readonly string[], answer: string): string {
+export function digestPrompt(prev: Digest, instructions: readonly string[], answer: string): string {
   const lines: string[] = [];
   if (prev) lines.push('## Previous digest', JSON.stringify(prev), '');
   lines.push("## The person's instructions (oldest first)");
-  for (const p of prompts) lines.push(`- ${clip(p.replace(/\s+/g, ' '), 300)}`);
+  for (const p of instructions) lines.push(`- ${clip(p.replace(/\s+/g, ' '), 300)}`);
   if (answer) lines.push('', "## The agent's last answer", clip(answer, 2000));
-  lines.push('', '## Language', languageLine(languageOf(prompts)));
+  lines.push('', '## Language', languageLine(languageOf(instructions)));
   return lines.join('\n');
 }
 
