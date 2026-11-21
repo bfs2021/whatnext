@@ -17,8 +17,12 @@ const COMMAND = 'wn-digest';
 /** How many links the pane draws; the rest are counted. */
 const SHOWN_LINKS = 8;
 const DEFAULT_PORT = '14318';
-/** The tmux server option whatnext sets to its receiver's port while it takes digests. */
+/**
+ * The option whatnext sets to its receiver's port while it takes digests, on the tmux session its list runs in. The session
+ * ends with the list process however it ends, even when the server stays for the commands in the workbenches.
+ */
 const LIVE_OPTION = '@wn_digest_port';
+const LIST_SESSION = '=list:';
 
 const digest = atom({plugin: 'whatnext-digest', key: 'digest'} as const, null as Digest, {shape: 'digest-1'});
 const links = atom({plugin: 'whatnext-digest', key: 'links'} as const, [] as FoundLink[], {shape: 'links-1'});
@@ -36,15 +40,15 @@ async function receiverUrl($: EngineInterface): Promise<string> {
 }
 
 /**
- * Whether a whatnext takes digests on the port this session sends to: its tmux server holds that port in
- * `@wn_digest_port`. A server gone, the option unset or another port is no; so is a check that fails.
+ * Whether a whatnext takes digests on the port this session sends to: the session of its list holds that port in
+ * `@wn_digest_port`. A server or list gone, the option unset or another port is no; so is a check that fails.
  */
 async function receiving($: EngineInterface): Promise<boolean> {
   const tmux = (await $.env.get('WHATNEXT_DIGEST_TMUX').catch(() => undefined)) || 'tmux';
   const socket = await $.env.get('WHATNEXT_DIGEST_SOCKET').catch(() => undefined);
   const server = socket ? ['-S', socket] : ['-L', 'whatnext'];
   const r = await $.process
-    .run([tmux, ...server, 'show-options', '-sqv', LIVE_OPTION], {timeoutMs: 5000})
+    .run([tmux, ...server, 'show-options', '-t', LIST_SESSION, '-qv', LIVE_OPTION], {timeoutMs: 5000})
     .catch(() => undefined);
   return !!r && r.exitCode === 0 && r.stdout.trim() === (await portOf($));
 }

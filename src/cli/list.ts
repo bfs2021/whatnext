@@ -83,9 +83,9 @@ export async function startList(env: Env): Promise<number> {
       WHATNEXT_DIGEST_TMUX: findTmux(),
       ...(sock ? {WHATNEXT_DIGEST_SOCKET: sock} : {}),
     });
-    await tmux.t(['set', '-s', DIGEST_LIVE, String(env.port)]);
-  } else {
-    await tmux.t(['set', '-su', DIGEST_LIVE]);
+    // 一覧のセッションのオプションに置く。一覧のプロセスがどう終わっても(シグナル、SIGKILL)一覧のセッションごと消え、
+    // 作業台のためにサーバが残っても、mod は受けていないと読む
+    await tmux.t(['set', '-t', `=${LIST}:`, DIGEST_LIVE, String(env.port)]);
   }
   const guideCommand = paneCommand(env, 'guide');
   await startGuide(tmux, guideCommand, homedir());

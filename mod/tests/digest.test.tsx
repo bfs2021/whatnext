@@ -38,7 +38,7 @@ function engine(
     port?: string;
     asks?: string[];
     /**
-     * What whatnext's tmux server holds in `@wn_digest_port` (the port it takes digests on); null when no server,
+     * What the session of whatnext's list holds in `@wn_digest_port` (the port it takes digests on); null when no server or list,
      * an Error when tmux cannot start.
      */
     live?: () => string | null | Error;
@@ -270,14 +270,16 @@ test('with no whatnext taking digests, a turn end calls no model and sends nothi
     answer: '{"goal": "G", "progress": "N", "next": "X"}',
   });
   await $.session.start({cwd: '/', surface: 'terminal', isInteractive: true});
-  // whatnext quit: its tmux server is gone
+  // whatnext quit: its tmux server (or the session of its list) is gone
   await turn($, 'x', 'https://github.com/acme/app/pull/1');
   expect(checks.at(-1)).toEqual([
     '/opt/tmux',
     '-S',
     '/tmp/tmux-501/whatnext',
     'show-options',
-    '-sqv',
+    '-t',
+    '=list:',
+    '-qv',
     '@wn_digest_port',
   ]);
   // whatnext runs again, without --digest (the option unset), or takes digests on another port

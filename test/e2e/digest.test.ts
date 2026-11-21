@@ -36,6 +36,17 @@ const digest = (
   links: links.map(([label, href]) => ({label, href})),
 });
 
+/** mod から見える、受けているポート(サーバのオプションと、一覧のセッションのオプション)。`socket` は mod に渡すソケット。 */
+const live = (socket?: string) => {
+  const server = socket ? ['-S', socket] : [];
+  return [
+    h.inner(...server, 'show-options', '-sqv', '@wn_digest_port').trim(),
+    h.inner(...server, 'show-options', '-t', '=list:', '-qv', '@wn_digest_port').trim(),
+  ]
+    .filter(Boolean)
+    .join(',');
+};
+
 function rows(app: string, demo: string) {
   return [
     bg('fixlogin', {name: 'fix-login', cwd: app, state: 'done'}),
@@ -176,12 +187,10 @@ describe('ダイジェスト', () => {
     expect(call?.args[i + 1]).toBe(join(REPO, 'mod'));
     const settings = JSON.parse(call?.args[(call?.args.indexOf('--settings') ?? 0) + 1] ?? '{}');
     expect(settings.env.WHATNEXT_DIGEST_PORT).toBe(String(h.port));
-    // mod が「ダイジェストを受けているか」を確かめる口: 専用サーバの @wn_digest_port に受け口のポートを置く
+    // mod が「ダイジェストを受けているか」を確かめる口: 一覧のセッションの @wn_digest_port に受け口のポートを置く
     expect(settings.env.WHATNEXT_DIGEST_TMUX).toMatch(/\/tmux$/);
     expect(settings.env.WHATNEXT_DIGEST_SOCKET).toMatch(new RegExp(`/${escapeRe(h.socket)}$`));
-    expect(h.inner('-S', settings.env.WHATNEXT_DIGEST_SOCKET, 'show-options', '-sqv', '@wn_digest_port').trim()).toBe(
-      String(h.port),
-    );
+    expect(live(settings.env.WHATNEXT_DIGEST_SOCKET)).toBe(String(h.port));
   });
 
   it('83: --digest なしの n には mod が付かない', async () => {
@@ -193,8 +202,26 @@ describe('ダイジェスト', () => {
     const call = h.calls().find(c => c.args[0] === '--bg');
     expect(call?.args).not.toContain('--plugin-dir');
     // ダイジェストを受けていないので、mod が確かめる口も置かない
-    expect(h.inner('show-options', '-sqv', '@wn_digest_port').trim()).toBe('');
+    expect(live()).toBe('');
   });
+
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    it(`82: 作業台でコマンドが動いている間に一覧が ${signal} で終わり、サーバが残っても、mod が確かめる口は残らない`, async () => {
+      h = new Harness();
+      h.agents([bg('a', {name: 'alpha'})]);
+      await h.start({args: '--digest'});
+      await h.keys('w');
+      await sleep(500);
+      h.inner('send-keys', '-t', '=sh-a0000000:', 'sleep 1007', 'Enter');
+      await sleep(500);
+      expect(live()).toBe(String(h.port));
+      process.kill(Number(h.inner('show', '-gv', '@wn_pid').trim()), signal);
+      await h.waitFor(/\[exit \d+\]/);
+      await sleep(500);
+      expect(h.sessions()).toContain('sh-a0000000');
+      expect(live()).toBe('');
+    });
+  }
 
   it('84: o でカーソルの行のリンクを選んで開く。リンクのない行では、ないことを示す', async () => {
     h = new Harness();
@@ -319,7 +346,7 @@ describe('ダイジェスト', () => {
       const call = h.calls().find(c => c.args[0] === '--bg');
       expect(h.log()).toMatch(/occupant=other receiver=none digest=true/);
       expect(call?.args).not.toContain('--plugin-dir');
-      expect(h.inner('show-options', '-sqv', '@wn_digest_port').trim()).toBe('');
+      expect(live()).toBe('');
       await h.keys('C-q', 'C-l');
       await h.select('alpha');
       const s = await h.waitFor(/│ alpha/);
