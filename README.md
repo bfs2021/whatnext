@@ -104,13 +104,13 @@ Design documents are written in Japanese.
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — spec: status rules, dependencies, display, key operations
 - [docs/DESIGN.md](docs/DESIGN.md) — how it works: dependencies, hooks, OpenTelemetry and transcripts
-- [docs/adr/](docs/adr/) — decisions that hold across rewrites
+- [docs/adr/](docs/adr/) — decisions that are hard to reverse
 - [docs/claude-code-behavior.md](docs/claude-code-behavior.md) — observed behavior of `claude` that whatnext relies on
 - [CONTEXT.md](CONTEXT.md) — glossary
 
 ## Development
 
-This project is rebuilt from scratch in cycles; only the docs above, `lib/` and the digest mod (`mod/`) persist. See [CLAUDE.md](CLAUDE.md).
+Until cycle 9 this project was rebuilt from scratch in cycles; it is now developed normally ([ADR-0023](docs/adr/0023-end-cycle-rewrite-and-move-to-normal-development.md)). See [CLAUDE.md](CLAUDE.md) for how to work on it.
 
 ```sh
 npm run build      # tsc (strict)

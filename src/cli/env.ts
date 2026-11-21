@@ -88,9 +88,14 @@ export function tmuxEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv
   return out;
 }
 
-/** whatnext の中のシェル(作業台、claude の画面)で動いているか。 */
+/**
+ * whatnext を起動してはいけないシェル(whatnext の中の作業台、claude の Bash)で動いているか。
+ * claude の Bash(`CLAUDECODE=1`)は、whatnext の中かどうかに関係なく断る。`--bg` のセッションの環境は常駐の daemon のもので、
+ * whatnext の中で動いているかを確実には見分けられない(#300)。
+ */
 export function insideWhatnext(env: Env, pe: NodeJS.ProcessEnv = process.env): boolean {
   if (pe.WHATNEXT_ROLE) return true;
+  if (pe.CLAUDECODE === '1') return true;
   const t = pe.TMUX;
   if (!t) return false;
   const sockPath = t.split(',')[0] ?? '';

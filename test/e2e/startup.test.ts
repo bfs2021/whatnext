@@ -37,6 +37,15 @@ describe('起動時と全体', () => {
     expect(out).toMatch(/\[exit 1\]/);
   });
 
+  it('claude の Bash(CLAUDECODE=1)で起動すると、whatnext の中でなくても断る(#300)', async () => {
+    h = new Harness();
+    h.port = 15997;
+    h.open('a', `${h.envLine()} CLAUDECODE=1 node ${CLI}`);
+    await h.waitFor(/whatnext: this shell runs inside whatnext\.[\s\S]*\[exit 1\]/, 8000, 'a');
+    h.open('b', `${h.envLine()} CLAUDECODE=1 node ${CLI} workbench`);
+    await h.waitFor(/whatnext: this shell runs inside whatnext\.[\s\S]*\[exit 1\]/, 8000, 'b');
+  });
+
   it('29: tmux がないと英語で示して終了する', async () => {
     h = new Harness();
     h.port = 15998;
@@ -45,7 +54,7 @@ describe('起動時と全体', () => {
     symlinkSync(process.execPath, join(bin, 'node'));
     h.open(
       'a',
-      `env -u TMUX WHATNEXT_ROLE= WHATNEXT_TMUX_SOCKET=${h.socket} WHATNEXT_PORT=15998 PATH=${bin} node ${CLI}`,
+      `env -u TMUX -u CLAUDECODE WHATNEXT_ROLE= WHATNEXT_TMUX_SOCKET=${h.socket} WHATNEXT_PORT=15998 PATH=${bin} node ${CLI}`,
     );
     await h.waitFor(/whatnext: tmux is not installed\.[\s\S]*\[exit 1\]/, 8000, 'a');
   });
