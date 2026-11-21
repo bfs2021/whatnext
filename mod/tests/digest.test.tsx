@@ -1,7 +1,7 @@
 import type {On, SessionMessage} from 'claude-code';
 import type {Engine} from 'claude-code/testing';
 import {expect, test} from 'claude-code/testing';
-import {DIGEST_SYSTEM, digestPrompt, parseDigest} from '../hooks/digest';
+import {DIGEST_SYSTEM, digestPrompt, languageOf, languageOfOne, parseDigest} from '../hooks/digest';
 import {addLinks, linkOf, urlsIn} from '../hooks/links';
 
 // Run with `npm run test:mod` (`claude plugin test mod`). The engine's hooks below stand for Claude Code.
@@ -130,6 +130,7 @@ test('the next digest reads the previous one, the instructions and the last answ
   expect(asks.at(-1)).toContain('"goal":"認証を移す"');
   expect(asks.at(-1)).toContain('- admin 配下も');
   expect(asks.at(-1)).toContain('移しました');
+  expect(asks.at(-1)).toContain('## Language\nWrite goal, progress and next in Japanese');
 });
 
 test('the pane draws Goal, Progress, Next and the links under the same headings as the list', async ($, on) => {
@@ -167,6 +168,51 @@ test('the digest is parsed from JSON, cut to its lengths, and none when it is em
   expect(parseDigest('{"goal": "", "progress": "", "next": ""}')).toBe(null);
   expect(parseDigest(`{"goal": "${'x'.repeat(200)}"}`)?.goal.length).toBe(80);
   expect(digestPrompt(null, ['a'], '')).not.toContain('Previous digest');
+});
+
+// The language of the digest is named from the person's instructions, not left to the model: told only "the
+// language the user writes in", Haiku once answered an English instruction in Russian.
+
+test('an instruction is Japanese when it has kana, English when its letters are all Latin', () => {
+  expect(languageOfOne('ログイン画面の二重送信を直して')).toBe('Japanese');
+  expect(languageOfOne('README.md に hello の行を足して')).toBe('Japanese');
+  expect(languageOfOne('Fix the double submit on the login page')).toBe('English');
+  expect(languageOfOne('see `ログイン()` and https://example.com/ログイン')).toBe('English');
+  expect(languageOfOne('```\nエラー: 見つからない\n```\nwhy does this fail?')).toBe('English');
+  expect(languageOfOne('/review')).toBe(undefined);
+  expect(languageOfOne('/review この PR を見て')).toBe('Japanese');
+  expect(languageOfOne('Исправь ошибку')).toBe(undefined);
+  expect(languageOfOne('修复登录错误')).toBe(undefined);
+  expect(languageOfOne('42')).toBe(undefined);
+});
+
+test("the instructions' language is the one most of them are in; on a tie, the newest one's", () => {
+  expect(languageOf(['認証を移して', 'ok', 'admin 配下も'])).toBe('Japanese');
+  expect(languageOf(['Move auth to tokens', 'はい'])).toBe('Japanese');
+  expect(languageOf(['はい', 'Move auth to tokens'])).toBe('English');
+  expect(languageOf(['/review', 'Move auth to tokens'])).toBe('English');
+  expect(languageOf(['Исправь ошибку'])).toBe(undefined);
+  expect(languageOf([])).toBe(undefined);
+});
+
+test('the input names the language to write in, and the system prompt points to it', () => {
+  expect(DIGEST_SYSTEM).toContain('Write every value in the language the "## Language" part of the input names');
+  expect(DIGEST_SYSTEM).not.toContain('the language the user writes in');
+  const en = digestPrompt(
+    {goal: 'Исправить вход', progress: '', next: ''},
+    ['Fix the double submit on the login page'],
+    'Done.',
+  );
+  expect(en.split('\n').slice(-2)).toEqual([
+    '## Language',
+    "Write goal, progress and next in English: the person's instructions are in English. Translate the previous digest into English if it is in another language.",
+  ]);
+  expect(digestPrompt(null, ['ログイン画面の二重送信を直して'], '')).toContain(
+    "## Language\nWrite goal, progress and next in Japanese: the person's instructions are in Japanese.",
+  );
+  expect(digestPrompt(null, ['Исправь ошибку'], '').split('\n').at(-1)).toBe(
+    "Write goal, progress and next in the language of the person's instructions above: in Japanese if they are in Japanese, in English if they are in English. Never use a language they are not written in.",
+  );
 });
 
 // The link rules, moved with links.ts from session-timeline.

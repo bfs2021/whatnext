@@ -9,7 +9,7 @@ The input is the previous digest (if any), the user's instructions (oldest first
 - goal: what the session as a whole is trying to achieve. Keep the previous goal unless the user changed course.
 - progress: how far it has got: what is done or decided, concretely.
 - next: what comes next, or what the agent waits for the user to decide. "" if nothing.
-Write every value in the language the user writes in, including the words for "the user". Reply with this JSON only:
+Write every value in the language the "## Language" part of the input names, including the words for "the user", even when the previous digest or the agent's answer is in another language. Reply with this JSON only:
 {"goal": "at most 40 characters", "progress": "at most 100 characters", "next": "at most 60 characters"}`;
 
 /** How many instructions the model reads, newest last. */
@@ -27,12 +27,56 @@ export function promptsOf(messages: readonly SessionMessage[]): string[] {
     .slice(-PROMPTS);
 }
 
+export type Language = 'Japanese' | 'English';
+
+/**
+ * The language one instruction is written in: Japanese when it has kana, English when its letters are all
+ * Latin. Code, URLs and the name of a slash command are not counted. Undefined for any other (or no) letters.
+ */
+export function languageOfOne(text: string): Language | undefined {
+  const words = text
+    .replace(/```[\s\S]*?(```|$)/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/^\s*\/\S+/, ' ');
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(words)) return 'Japanese';
+  const letters = words.match(/\p{L}/gu) ?? [];
+  if (letters.length === 0) return undefined;
+  return letters.every(c => /\p{Script=Latin}/u.test(c)) ? 'English' : undefined;
+}
+
+/**
+ * The language of the person's instructions: the one most of them are in; on a tie, the newest one's.
+ * Undefined when none is in Japanese or English.
+ */
+export function languageOf(prompts: readonly string[]): Language | undefined {
+  const count = {Japanese: 0, English: 0};
+  let newest: Language | undefined;
+  for (const p of prompts) {
+    const l = languageOfOne(p);
+    if (!l) continue;
+    count[l]++;
+    newest = l;
+  }
+  if (count.Japanese === count.English) return newest;
+  return count.Japanese > count.English ? 'Japanese' : 'English';
+}
+
+/** The part of the input that names the language to write in. */
+export function languageLine(language: Language | undefined): string {
+  if (language) {
+    return `Write goal, progress and next in ${language}: the person's instructions are in ${language}. Translate the previous digest into ${language} if it is in another language.`;
+  }
+  return "Write goal, progress and next in the language of the person's instructions above: in Japanese if they are in Japanese, in English if they are in English. Never use a language they are not written in.";
+}
+
 export function digestPrompt(prev: Digest, prompts: readonly string[], answer: string): string {
   const lines: string[] = [];
   if (prev) lines.push('## Previous digest', JSON.stringify(prev), '');
   lines.push("## The person's instructions (oldest first)");
   for (const p of prompts) lines.push(`- ${clip(p.replace(/\s+/g, ' '), 300)}`);
   if (answer) lines.push('', "## The agent's last answer", clip(answer, 2000));
+  lines.push('', '## Language', languageLine(languageOf(prompts)));
   return lines.join('\n');
 }
 
