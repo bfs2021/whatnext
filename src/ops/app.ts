@@ -9,7 +9,7 @@ import {color} from '../../lib/text/text.js';
 import {statusLabel, type Tier} from '../../lib/tier/classify.js';
 import {focusTerminal, focusWorkbench, splitWorkbench, tabWorkbench} from '../../lib/tmux/ghostty.js';
 import {GUIDE, LIST} from '../../lib/tmux/tmux.js';
-import type {DigestFacts} from '../input/digest.js';
+import type {DigestAndLinks} from '../input/digest.js';
 import type {Observation, ObsRow} from '../input/observe.js';
 import {locate} from '../input/where.js';
 import {followCursor, initialCursor, selectableOrder} from '../model/cursor.js';
@@ -80,8 +80,8 @@ export class App {
   private rows = new Map<string, ObsRow>();
   private spawner = new Map<string, string>();
   private supplied = new Map<string, Supplied>();
-  /** ダイジェスト(`--digest` のときだけ。最後の更新の時点の値)。 */
-  private digests = new Map<string, DigestFacts>();
+  /** ダイジェストと会話リンク(`--digest` のときだけ。最後の更新の時点の値)。 */
+  private digestAndLinks = new Map<string, DigestAndLinks>();
   /** `--digest` で起動したのに、動いている一覧は `--digest` なしだった。 */
   private digestWanted = false;
   private error?: string;
@@ -278,7 +278,7 @@ export class App {
     this.rows = new Map(obs.rows.map(r => [r.sid, {...r, name: clean(r.name)}]));
     this.spawner = obs.spawner;
     this.supplied = obs.supplied;
-    this.digests = obs.digests;
+    this.digestAndLinks = obs.digestAndLinks;
     for (const r of obs.rows) {
       if (r.tier !== null && !this.persisted.seen.has(r.sid)) this.persisted.seen.set(r.sid, {first: obs.at});
     }
@@ -467,7 +467,7 @@ export class App {
       },
       ctx: this.supplied.get(sid)?.ctx,
       age: this.ageMs.get(sid),
-      goal: this.p.digest ? this.digests.get(sid)?.digest?.goal || undefined : undefined,
+      goal: this.p.digest ? this.digestAndLinks.get(sid)?.digest?.goal || undefined : undefined,
       line: this.lineOf(r, tier === 'waiting' ? tierOf(r.tier) : tier),
       running: r.id ? this.running.get(r.id) : undefined,
       note: n.spawned ? undefined : this.persisted.notes.get(sid),
@@ -496,7 +496,7 @@ export class App {
     };
     const cur = this.cursor ? this.rows.get(this.cursor) : undefined;
     if (this.p.digest && cur) {
-      const f = this.digests.get(cur.sid);
+      const f = this.digestAndLinks.get(cur.sid);
       s.side = {title: cur.name, digest: f?.digest, links: f?.links ?? [], off: this.p.digestOff};
     }
     if (this.error) s.message = this.error;
@@ -837,7 +837,7 @@ export class App {
   // ---- 会話リンク ----
 
   private linksOf(sid: string): {label: string; href: string}[] {
-    return this.digests.get(sid)?.links ?? [];
+    return this.digestAndLinks.get(sid)?.links ?? [];
   }
 
   private openLinks(sid: string): void {

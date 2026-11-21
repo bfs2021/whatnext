@@ -1,7 +1,7 @@
 import type {EngineInterface, Register} from 'claude-code';
 import {atom, read, update} from 'claude-code';
 
-import type {Digest, FoundLink} from '../types';
+import type {ConversationLink, Digest} from '../types';
 import {DIGEST_SYSTEM, digestBody, digestPrompt, instructionsOf, nameOf, parseDigest} from './digest';
 import type {Mention} from './links';
 import {addLinks, mentionsOf, NOT_ARGUMENTS, toolMentions} from './links';
@@ -25,7 +25,7 @@ const LIVE_OPTION = '@wn_digest_port';
 const LIST_SESSION = '=list:';
 
 const digest = atom({plugin: 'whatnext-digest', key: 'digest'} as const, null as Digest, {shape: 'digest-1'});
-const links = atom({plugin: 'whatnext-digest', key: 'links'} as const, [] as FoundLink[], {shape: 'links-1'});
+const links = atom({plugin: 'whatnext-digest', key: 'links'} as const, [] as ConversationLink[], {shape: 'links-1'});
 
 /** The newest digest asked for: an older answer that comes back later is dropped. */
 let asked = 0;
@@ -154,7 +154,7 @@ export const register: Register = on => {
   on('ui.render', {component: 'Pane', requestId: PANE}, async ($, e) => {
     const {Box, Text, Link} = $.ui.resolve(e);
     const r = await read($, digest);
-    const found = await read($, links);
+    const said = await read($, links);
     const field = (label: string, value: string) => (
       <Box flexDirection="row">
         <Box width={10} flexShrink={0}>
@@ -176,15 +176,15 @@ export const register: Register = on => {
         ) : (
           <Text dimColor>No digest yet. It comes when a turn ends.</Text>
         )}
-        {found.length > 0 ? (
+        {said.length > 0 ? (
           <Box flexDirection="column" marginTop={1}>
             <Text bold>Links</Text>
-            {found.slice(0, SHOWN_LINKS).map(l => (
+            {said.slice(0, SHOWN_LINKS).map(l => (
               <Box key={`link-${l.key}`} flexDirection="row" paddingLeft={2}>
                 <Link href={l.href} label={nameOf(l)} />
               </Box>
             ))}
-            {found.length > SHOWN_LINKS ? <Text dimColor>{`  +${found.length - SHOWN_LINKS} more`}</Text> : null}
+            {said.length > SHOWN_LINKS ? <Text dimColor>{`  +${said.length - SHOWN_LINKS} more`}</Text> : null}
           </Box>
         ) : null}
       </Box>

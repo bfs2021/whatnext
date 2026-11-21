@@ -2,7 +2,7 @@
 // URLs are listed: docs/DESIGN.md "ダイジェストの mod".
 import type {SessionMessage} from 'claude-code';
 
-import type {FoundLink} from '../types';
+import type {ConversationLink} from '../types';
 
 /** How many links the pane keeps; the oldest mentioned drop off. */
 export const MAX_LINKS = 40;
@@ -87,7 +87,7 @@ export function urlsIn(text: string): string[] {
  * A URL as the pane lists it: GitHub's issues, pull requests and commits by
  * their number, one entry however the URL went on (`/files`, `#issuecomment-…`).
  */
-export function linkOf(url: string): Omit<FoundLink, 'seen'> | undefined {
+export function linkOf(url: string): Omit<ConversationLink, 'seen'> | undefined {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -181,7 +181,7 @@ export function mentionsOf(messages: readonly SessionMessage[]): Mention[] {
  * rows drop what follows their number (`#issuecomment-…`, `/files`), which a
  * link's words then name (`[このコメント](…)`), not the PR. Only a trailing `/` is the same page.
  */
-function isWhole(url: string, link: Omit<FoundLink, 'seen'>): boolean {
+function isWhole(url: string, link: Omit<ConversationLink, 'seen'>): boolean {
   return new URL(url).href.replace(/\/$/, '') === link.key;
 }
 
@@ -196,7 +196,7 @@ function saidOf(mention: Mention): Said[] {
  * link goes to it whole, the latest kept when it is said again bare or by a
  * link to a part of it. Newest first, at most MAX_LINKS.
  */
-export function addLinks(known: readonly FoundLink[], mentions: readonly Mention[]): FoundLink[] {
+export function addLinks(known: readonly ConversationLink[], mentions: readonly Mention[]): ConversationLink[] {
   const byKey = new Map(known.map(l => [l.key, l]));
   let seen = Math.max(0, ...known.map(l => l.seen));
   for (const mention of mentions) {

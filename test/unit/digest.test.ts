@@ -28,13 +28,13 @@ describe('ダイジェストの受け口', () => {
       5,
     );
     expect(r?.sid).toBe('s1');
-    expect(r?.facts.digest).toEqual({goal: 'a[31mb c', progress: 'n', next: ''});
-    expect(r?.facts.links).toEqual([{label: 'x', href: 'https://example.com/a'}]);
-    expect(r?.facts.at).toBe(5);
+    expect(r?.received.digest).toEqual({goal: 'a[31mb c', progress: 'n', next: ''});
+    expect(r?.received.links).toEqual([{label: 'x', href: 'https://example.com/a'}]);
+    expect(r?.received.at).toBe(5);
   });
 
   it('文字列の本文も読む。ダイジェストでない本文、セッションのない本文は読まない', () => {
-    expect(parseDigestBody(JSON.stringify(body()), 0)?.facts.digest?.goal).toBe('ログイン画面の二重送信を直す');
+    expect(parseDigestBody(JSON.stringify(body()), 0)?.received.digest?.goal).toBe('ログイン画面の二重送信を直す');
     expect(parseDigestBody({hook_event_name: 'Stop', session_id: 's1'}, 0)).toBeUndefined();
     expect(parseDigestBody(body({session_id: ''}), 0)).toBeUndefined();
     expect(parseDigestBody('not json', 0)).toBeUndefined();
@@ -49,14 +49,14 @@ describe('ダイジェストの受け口', () => {
     const on = new DigestHookStore(true, () => 1);
     on.receiveHook(body());
     on.receiveHook(body({digest: null, links: []}));
-    expect(on.digestOf('s1')?.digest?.goal).toBe('ログイン画面の二重送信を直す');
-    expect(on.digestOf('s1')?.links).toEqual([]);
+    expect(on.digestAndLinksOf('s1')?.digest?.goal).toBe('ログイン画面の二重送信を直す');
+    expect(on.digestAndLinksOf('s1')?.links).toEqual([]);
     on.forget(new Set(['s2']));
-    expect(on.digestOf('s1')).toBeUndefined();
+    expect(on.digestAndLinksOf('s1')).toBeUndefined();
 
     const off = new DigestHookStore(false);
     off.receiveHook(body());
-    expect(off.digestOf('s1')).toBeUndefined();
+    expect(off.digestAndLinksOf('s1')).toBeUndefined();
     expect(off.snapshot().size).toBe(0);
   });
 

@@ -1,6 +1,6 @@
 import type {SessionMessage} from 'claude-code';
 
-import type {Digest, FoundLink} from '../types';
+import type {ConversationLink, Digest} from '../types';
 
 // The digest's model call and what goes to whatnext (docs/DESIGN.md "ダイジェストの mod"). Pure functions.
 
@@ -123,7 +123,7 @@ export interface DigestBody {
   links: {label: string; href: string}[];
 }
 
-export function digestBody(sessionId: string, digest: Digest, links: readonly FoundLink[]): DigestBody {
+export function digestBody(sessionId: string, digest: Digest, links: readonly ConversationLink[]): DigestBody {
   return {
     hook_event_name: 'WhatnextDigest',
     session_id: sessionId,
@@ -133,6 +133,6 @@ export function digestBody(sessionId: string, digest: Digest, links: readonly Fo
 }
 
 /** A link as the pane and the list name it: a Markdown link's words, else the label made from its URL. */
-export function nameOf(l: FoundLink): string {
+export function nameOf(l: ConversationLink): string {
   return l.text ?? l.label;
 }
