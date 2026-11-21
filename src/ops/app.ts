@@ -64,7 +64,7 @@ type Mode =
   | {k: 'dir'; filter: string; sel: number; items: DirItem[]; waitFor?: string}
   | {k: 'other'; text: string; error?: string; waitFor?: string; items: DirItem[]}
   | {k: 'starting'; dir: string; since: number}
-  /** リンクは開いた時点の写し。開いている間に更新でダイジェストが替わっても、画面と Enter が同じものを指す。 */
+  /** リンクは開いた時点の写し。開いている間に更新で会話リンクが替わっても、画面と Enter が同じものを指す。 */
   | {k: 'links'; name: string; items: {label: string; href: string}[]; sel: number}
   | {k: 'output'; lines: string[]};
 

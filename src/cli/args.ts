@@ -6,7 +6,7 @@ export const USAGE = `Usage: whatnext [--digest | --help]
 A terminal list of your parallel Claude Code sessions, grouped by repository.
 
   whatnext            Open the list (or come back to the one that is running)
-  whatnext --digest   Open the list with the digests (goal, progress, next) and links of the sessions started with n.
+  whatnext --digest   Open the list with the digests (Goal, Progress, Next) and links of the sessions started with n.
                       Each turn end of those sessions makes one Haiku call.
   whatnext workbench  Show the workbench shell of the session you are looking at (run it in a split)
   --help              Show this help

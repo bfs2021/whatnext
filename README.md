@@ -48,7 +48,7 @@ Keys in the list:
 | `w` | Create the session's workbench shell (in Ghostty, also opens it in a split) |
 | `t` | Same as `w`, but in Ghostty opens it in a new tab |
 | `v` | Open the session's directory in VS Code |
-| `o` | Open one of the session's links (with `--digest` only) |
+| `o` | Open one of the session's conversation links (with `--digest` only) |
 | `r` | Refresh |
 | `q` | Quit (asks first if something is still running in a workbench) |
 
