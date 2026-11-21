@@ -184,7 +184,7 @@ whatnext を**どう実現するか**（仕組み）を書く。**何を実現�
 
 ## ダイジェストの受信
 
-- mod は、今の受け口（`127.0.0.1:<ポート>`）の `/v1/hooks` に、フックと同じ口で次の本文を送る。`{"hook_event_name": "WhatnextDigest", "session_id": <sessionId>, "digest": {"goal", "progress", "next"} | null, "links": [{"label", "href"}, …]}`。`digest` が `null` なのは、ダイジェストを作れなかった回である。`links` は新しいものから20件まで。この形は版の違う whatnext と mod の間の契約なので、変えるときは両方を読める形にする。
+- mod は、今の受け口（`127.0.0.1:<ポート>`）の `/v1/hooks` に、フックと同じ口で次の本文を送る。`{"hook_event_name": "WhatnextDigest", "session_id": <sessionId>, "digest": {"goal", "progress", "next"} | null, "links": [{"label", "href"}, …]}`。`digest` が `null` なのは、ダイジェストを作れなかった回である。`links` は新しいものから20件まで。この形は版の違う whatnext と mod の間の契約なので、変えるときは両方を読める形にする。`WhatnextDigest` は、ダイジェストの mod（`whatnext-digest`）が送る本文であることを表す名前で、中身はダイジェストと会話リンクを別の項目に並べる（会話リンクはダイジェストの一部ではない）。
 - lib の受け口（`openReceiver`）は、`/v1/hooks` の本文を `HookStore.receiveHook` に渡す。一覧は `HookStore` を継いだ `DigestHookStore`（`src/input/digest.ts`）を渡し、`hook_event_name` が `WhatnextDigest` の本文だけを手前で抜き取り、ほかは lib に渡す。lib の受け口と契約は変えない。別の口（`/v1/digest`）を足す案は、lib を直すことになるので採らなかった。
 - 受けた値はメモリにだけ持つ（[ADR-0002](adr/0002-no-writes-no-persistent-state.md)）。セッションごとに最後に受けたものだけを持ち、`digest` が `null` の回は前のダイジェストを残して会話リンクだけを替える。`--json` から消えたセッションの値は、フックの値と同じく更新のたびに捨てる（`forget`）。
 - `--digest` で起動して受け口を開けなかったとき（`probe` が `free` でない、または `openReceiver` が `null`）は、一覧の起動（`src/cli/list.ts` の `digestOffText`）が理由の文言を作り、`Ports.digestOff` で一覧に渡す。右の欄は、ダイジェストのない行の文言の代わりにこれを出す。文言は `probe` の答えで分ける（`other`：`is used by another program`、`whatnext`：`is used by another whatnext`、`free` なのに開けなかった：`could not open port`）。受け口を開けなければ mod を付けず、ダイジェストは届かないので、どの行でも理由が出る。シナリオ 41 の「エラーを示さない」の、`--digest` のときだけの例外である（PRODUCT.md「ダイジェスト（`--digest`）」）。
